@@ -1,5 +1,14 @@
 # MSEM001
 
+RDP-Verbindung auf die Maschine (VPN muss aktiv sein ...duh):
+
+```
+Adresse: MSEM001
+Anmeldename: ATBAS
+Passwort: Bitwarden unter 
+ASUS Lapi Entwicklung MSEM001
+```
+
 ## Send-WakeOnLan
 
 Script für das Entsenden von Magic Pakets per UDP Broadcast
