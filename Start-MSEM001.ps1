@@ -1,0 +1,1 @@
+.\Send-WakeOnLan.ps1 -MacAddress "50-EB-F6-35-C1-F2" -Broadcast 10.20.1.255 -Verbose
