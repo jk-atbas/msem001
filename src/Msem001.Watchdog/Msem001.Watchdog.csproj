@@ -1,0 +1,48 @@
+<Project Sdk="Microsoft.NET.Sdk.Worker">
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <RootNamespace>Msem001.Watchdog</RootNamespace>
+    <AssemblyName>Msem001.Watchdog</AssemblyName>
+    <UserSecretsId>msem001-watchdog</UserSecretsId>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="EnvironmentAbstractions" />
+    <PackageReference Include="MailKit" />
+    <PackageReference Include="Microsoft.Extensions.Hosting" />
+    <PackageReference Include="Microsoft.Extensions.Hosting.WindowsServices" />
+    <PackageReference Include="Serilog.Enrichers.Environment" />
+    <PackageReference Include="Serilog.Enrichers.Thread" />
+    <PackageReference Include="Serilog.Extensions.Logging" />
+    <PackageReference Include="Serilog.Formatting.Compact" />
+    <PackageReference Include="Serilog.Settings.Configuration" />
+    <PackageReference Include="Serilog.Sinks.Console" />
+    <PackageReference Include="Serilog.Sinks.File" />
+    <PackageReference Include="System.IO.Abstractions" />
+    <PackageReference Include="System.Management" />
+  </ItemGroup>
+
+  <ItemGroup Label="Testability: direct use of File/Directory/Path/DriveInfo/Process/Environment is a build error">
+    <PackageReference Include="Microsoft.CodeAnalysis.BannedApiAnalyzers" PrivateAssets="all" />
+    <PackageReference Include="EnvironmentAbstractions.BannedApiAnalyzer" PrivateAssets="all" />
+    <AdditionalFiles Include="BannedSymbols.txt" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="Msem001.Watchdog.Tests" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- Die Wartungsskripte aus dem Repo werden mit dem Dienst ausgeliefert (Single Source of Truth). -->
+    <Content Include="..\..\scripts\*.ps1" Link="scripts\%(Filename)%(Extension)">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+      <CopyToPublishDirectory>PreserveNewest</CopyToPublishDirectory>
+      <ExcludeFromSingleFile>true</ExcludeFromSingleFile>
+    </Content>
+    <Content Update="appsettings*.json">
+      <ExcludeFromSingleFile>true</ExcludeFromSingleFile>
+    </Content>
+  </ItemGroup>
+
+</Project>

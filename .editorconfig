@@ -1,0 +1,70 @@
+root = true
+
+[*]
+charset = utf-8
+end_of_line = crlf
+insert_final_newline = true
+trim_trailing_whitespace = true
+indent_style = space
+indent_size = 4
+
+[*.{json,xml,csproj,props,targets,slnx,yml,yaml}]
+indent_size = 2
+
+[*.md]
+trim_trailing_whitespace = false
+
+[*.cs]
+# Sprachkonventionen
+csharp_style_namespace_declarations = file_scoped:warning
+csharp_style_var_for_built_in_types = true:suggestion
+csharp_style_var_when_type_is_apparent = true:suggestion
+csharp_style_var_elsewhere = true:suggestion
+csharp_style_expression_bodied_methods = when_on_single_line:suggestion
+csharp_style_expression_bodied_properties = true:suggestion
+csharp_style_prefer_primary_constructors = true:suggestion
+csharp_prefer_braces = when_multiline:suggestion
+csharp_using_directive_placement = outside_namespace:warning
+dotnet_sort_system_directives_first = true
+dotnet_style_qualification_for_field = false:suggestion
+dotnet_style_qualification_for_property = false:suggestion
+dotnet_style_qualification_for_method = false:suggestion
+dotnet_style_qualification_for_event = false:suggestion
+
+# Formatierung
+csharp_new_line_before_open_brace = all
+csharp_new_line_before_else = true
+csharp_new_line_before_catch = true
+csharp_new_line_before_finally = true
+
+# Unbenutzte Usings
+dotnet_diagnostic.IDE0005.severity = warning
+
+# Because of GenerateDocumentationFile setting in csproj
+dotnet_diagnostic.CS1591.severity = suggestion
+
+# Stylecop
+dotnet_diagnostic.SA1003.severity = none # Type casts can have following whitespaces
+dotnet_diagnostic.SA1008.severity = none # Not compatible with lambda syntax and SA1003
+dotnet_diagnostic.SA1009.severity = none # Not compatible with primary constructor and SA1003
+dotnet_diagnostic.SA1101.severity = none # Prefix local calls with this is 
+dotnet_diagnostic.SA1122.severity = none # string.Empty and "" can be used as synonyms
+dotnet_diagnostic.SA1139.severity = none # Literal numeric suffix or casts are allowed
+dotnet_diagnostic.SA1200.severity = none # Colides with file scoped namespaces
+dotnet_diagnostic.SA1208.severity = none # Usings should be alphabetically sorted
+dotnet_diagnostic.SA1309.severity = none # We don't do undescores for private fields
+dotnet_diagnostic.SA1503.severity = none # Braces can be omitted if its a oneline, otherwise SA1519 triggers
+dotnet_diagnostic.SA1504.severity = none # A mixture of both is allowed
+dotnet_diagnostic.SA1600.severity = suggestion # Mostly due to internal members
+dotnet_diagnostic.SA1602.severity = suggestion # Enum values
+dotnet_diagnostic.SA1611.severity = suggestion # Primary constructor args
+dotnet_diagnostic.SA1623.severity = none # Comments for properties don't need gets/sets in the description
+dotnet_diagnostic.SA1629.severity = none # Comments don't need to end with a period
+dotnet_diagnostic.SA1633.severity = none # File headers are not necessary
+
+[tests/**.cs]
+# xUnit-Testnamen enthalten Unterstriche
+dotnet_diagnostic.CA1707.severity = none
+# Logger-Aufrufe und konstante Arrays in Assertions sind in Tests unkritisch
+dotnet_diagnostic.CA1848.severity = none
+dotnet_diagnostic.CA1861.severity = none

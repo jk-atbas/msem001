@@ -1,0 +1,33 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <IsPackable>false</IsPackable>
+    <IsTestProject>true</IsTestProject>
+    <RootNamespace>Msem001.Watchdog.Tests</RootNamespace>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="EnvironmentAbstractions.TestHelpers" />
+    <PackageReference Include="Microsoft.Extensions.TimeProvider.Testing" />
+    <PackageReference Include="Testably.Abstractions.Testing" />
+    <PackageReference Include="TUnit" />
+    <PackageReference Include="TUnit.Assertions" />
+    <PackageReference Include="TUnit.Mocks" />
+    <PackageReference Include="TUnit.Mocks.Logging" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Using Include="Microsoft.Extensions.Logging" />
+    <!-- Testably.Abstractions.Testing also defines a TimeProvider; the BCL one is meant -->
+    <Using Include="System.TimeProvider" Alias="TimeProvider" />
+    <Using Include="TUnit.Mocks" />
+    <Using Include="TUnit.Mocks.Arguments" />
+    <Using Include="TUnit.Mocks.Logging" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\Msem001.Watchdog\Msem001.Watchdog.csproj" />
+  </ItemGroup>
+
+</Project>
