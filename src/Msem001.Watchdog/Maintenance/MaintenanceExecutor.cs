@@ -19,14 +19,24 @@ internal sealed partial class MaintenanceExecutor(IJenkinsAgent agent, IJenkinsA
     /// </summary>
     /// <returns>The result of the routine.</returns>
     public Task<T> RunWithAgentStoppedAsync<T>(string routineName, Func<CancellationToken, Task<T>> routine, CancellationToken cancellationToken) =>
-        RunWithAgentStoppedAsync(routineName, routine, isUrgent: null, cancellationToken);
+        RunWithAgentStoppedAsync(routineName, routine, isUrgent: null, drainTimeout: null, cancellationToken);
 
     /// <summary>
-    /// Waits for running builds (unless <paramref name="isUrgent"/> returns <see langword="true"/>), stops the agent,
-    /// runs the routine and always reconnects the agent afterwards.
+    /// Waits for running builds (at most <paramref name="drainTimeout"/>, unless <paramref name="isUrgent"/> returns
+    /// <see langword="true"/>), stops the agent, runs the routine and always reconnects the agent afterwards.
     /// </summary>
+    /// <param name="routineName">Name of the routine for logs and the offline reason in Jenkins.</param>
+    /// <param name="routine">The maintenance routine.</param>
+    /// <param name="isUrgent">Optional check that ends the wait for running builds immediately.</param>
+    /// <param name="drainTimeout">Maximum wait for running builds; <see langword="null"/> = <c>JenkinsAgent:DrainTimeout</c>.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
     /// <returns>The result of the routine.</returns>
-    public async Task<T> RunWithAgentStoppedAsync<T>(string routineName, Func<CancellationToken, Task<T>> routine, Func<bool>? isUrgent, CancellationToken cancellationToken)
+    public async Task<T> RunWithAgentStoppedAsync<T>(
+        string routineName,
+        Func<CancellationToken, Task<T>> routine,
+        Func<bool>? isUrgent,
+        TimeSpan? drainTimeout,
+        CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(routine);
 
@@ -35,7 +45,7 @@ internal sealed partial class MaintenanceExecutor(IJenkinsAgent agent, IJenkinsA
         try
         {
             LogRoutineStarting(logger, routineName);
-            var markedOffline = await drain.DrainAsync(routineName, isUrgent, cancellationToken).ConfigureAwait(false);
+            var markedOffline = await drain.DrainAsync(routineName, isUrgent, drainTimeout, cancellationToken).ConfigureAwait(false);
             try
             {
                 await StopAgentAsync(cancellationToken).ConfigureAwait(false);

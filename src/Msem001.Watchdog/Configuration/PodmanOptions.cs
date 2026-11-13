@@ -26,6 +26,12 @@ public sealed class PodmanOptions
     /// <summary>After an unsuccessful repair the next attempt is made after this interval at the earliest.</summary>
     public TimeSpan RepairRetryInterval { get; set; } = TimeSpan.FromMinutes(30);
 
+    /// <summary>
+    /// Maximum time a Podman/win-sshproxy repair waits for running builds (instead of <see cref="JenkinsAgentOptions.DrainTimeout"/>).
+    /// Builds that need the Docker API cannot finish while the proxy is broken, so this is shorter. 0 = do not wait.
+    /// </summary>
+    public TimeSpan RepairDrainTimeout { get; set; } = TimeSpan.FromMinutes(10);
+
     /// <summary>Timeout of the Docker API ping.</summary>
     public TimeSpan ProbeTimeout { get; set; } = TimeSpan.FromSeconds(15);
 

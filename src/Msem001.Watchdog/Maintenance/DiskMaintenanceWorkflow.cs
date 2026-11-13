@@ -59,7 +59,7 @@ internal sealed partial class DiskMaintenanceWorkflow(
 
         LogLowSpace(logger, trigger, before, settings.CleanupThresholdGb);
         return await executor
-            .RunWithAgentStoppedAsync("Speicherbereinigung", token => RunMaintenanceAsync(before, token), IsCriticallyLow, cancellationToken)
+            .RunWithAgentStoppedAsync("Speicherbereinigung", token => RunMaintenanceAsync(before, token), IsCriticallyLow, drainTimeout: null, cancellationToken)
             .ConfigureAwait(false);
     }
 

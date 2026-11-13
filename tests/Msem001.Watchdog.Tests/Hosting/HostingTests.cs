@@ -65,6 +65,7 @@ public sealed class HostingTests
         await Assert.That(provider.GetRequiredService<IJenkinsAgentDrain>()).IsTypeOf<JenkinsAgentDrain>();
         await Assert.That(options.Disk.ImmediateMaintenanceThresholdGb).IsEqualTo(10);
         await Assert.That(options.JenkinsAgent.DrainTimeout).IsEqualTo(TimeSpan.FromHours(1));
+        await Assert.That(options.Podman.RepairDrainTimeout).IsEqualTo(TimeSpan.FromMinutes(10));
         await Assert.That(options.JenkinsAgent.IsApiConfigured).IsFalse();
     }
 
@@ -124,7 +125,7 @@ public sealed class HostingTests
     }
 
     [Test]
-    [Arguments(true, true, "Sanfte Wartung aktiv (Jenkins-API als watchdog)")]
+    [Arguments(true, true, "Sanfte Wartung aktiv (Jenkins-API als watchdog): Agent wird vor einer Wartung offline geschaltet, laufende Builds werden höchstens 01:00:00 abgewartet (Podman-Reparatur 00:10:00)")]
     [Arguments(true, false, "Sanfte Wartung inaktiv")]
     [Arguments(false, false, null)]
     public async Task StartupDiagnostics_LogsGracefulMaintenanceState(bool agentEnabled, bool apiConfigured, string? expected)

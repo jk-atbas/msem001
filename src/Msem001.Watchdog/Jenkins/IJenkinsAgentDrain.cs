@@ -6,14 +6,15 @@ namespace Msem001.Watchdog.Jenkins;
 internal interface IJenkinsAgentDrain
 {
     /// <summary>
-    /// Marks the node temporarily offline (no new builds) and waits until it is idle, at most
-    /// <see cref="Configuration.JenkinsAgentOptions.DrainTimeout"/>. Never throws except on cancellation.
+    /// Marks the node temporarily offline (no new builds) and waits until it is idle, at most <paramref name="timeout"/>.
+    /// Never throws except on cancellation.
     /// </summary>
     /// <param name="routineName">Name of the maintenance routine, shown as offline reason in Jenkins.</param>
     /// <param name="isUrgent">Optional check; once it returns <see langword="true"/> the wait ends immediately.</param>
+    /// <param name="timeout">Maximum wait; <see langword="null"/> = <see cref="Configuration.JenkinsAgentOptions.DrainTimeout"/>.</param>
     /// <param name="cancellationToken">Cancellation token. On cancellation the node is brought back online.</param>
     /// <returns><see langword="true"/> if the node was marked offline by the watchdog and must be restored with <see cref="RestoreAsync"/>.</returns>
-    Task<bool> DrainAsync(string routineName, Func<bool>? isUrgent, CancellationToken cancellationToken);
+    Task<bool> DrainAsync(string routineName, Func<bool>? isUrgent, TimeSpan? timeout, CancellationToken cancellationToken);
 
     /// <summary>Brings the node back online if <paramref name="markedOffline"/> is set. Never throws.</summary>
     /// <returns>A task that completes when done.</returns>

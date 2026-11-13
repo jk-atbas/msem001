@@ -19,7 +19,7 @@ internal sealed partial class JenkinsAgentDrain(
 
     private volatile bool staleCheckPending = true;
 
-    public async Task<bool> DrainAsync(string routineName, Func<bool>? isUrgent, CancellationToken cancellationToken)
+    public async Task<bool> DrainAsync(string routineName, Func<bool>? isUrgent, TimeSpan? timeout, CancellationToken cancellationToken)
     {
         var settings = options.Value.JenkinsAgent;
         if (!api.IsConfigured)
@@ -51,7 +51,7 @@ internal sealed partial class JenkinsAgentDrain(
                 LogAlreadyOffline(logger, settings.AgentName, status.OfflineCauseReason ?? string.Empty);
             }
 
-            await WaitUntilIdleAsync(status, routineName, isUrgent, settings, cancellationToken).ConfigureAwait(false);
+            await WaitUntilIdleAsync(status, routineName, isUrgent, timeout ?? settings.DrainTimeout, settings.DrainPollInterval, cancellationToken).ConfigureAwait(false);
             return markedOffline;
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
@@ -159,16 +159,16 @@ internal sealed partial class JenkinsAgentDrain(
         ex is HttpRequestException or JsonException or KeyNotFoundException or InvalidOperationException
            or TimeoutException or TaskCanceledException { InnerException: TimeoutException };
 
-    private async Task WaitUntilIdleAsync(JenkinsNodeStatus status, string routineName, Func<bool>? isUrgent, JenkinsAgentOptions settings, CancellationToken cancellationToken)
+    private async Task WaitUntilIdleAsync(JenkinsNodeStatus status, string routineName, Func<bool>? isUrgent, TimeSpan timeout, TimeSpan pollInterval, CancellationToken cancellationToken)
     {
         var started = timeProvider.GetTimestamp();
         var waiting = false;
         while (!status.Idle)
         {
             var waited = timeProvider.GetElapsedTime(started);
-            if (waited >= settings.DrainTimeout)
+            if (waited >= timeout)
             {
-                LogDrainTimeout(logger, routineName, settings.DrainTimeout);
+                LogDrainTimeout(logger, routineName, timeout);
                 return;
             }
 
@@ -180,11 +180,11 @@ internal sealed partial class JenkinsAgentDrain(
 
             if (!waiting)
             {
-                LogWaiting(logger, routineName, settings.DrainTimeout, settings.DrainPollInterval);
+                LogWaiting(logger, routineName, timeout, pollInterval);
                 waiting = true;
             }
 
-            await Task.Delay(settings.DrainPollInterval, timeProvider, cancellationToken).ConfigureAwait(false);
+            await Task.Delay(pollInterval, timeProvider, cancellationToken).ConfigureAwait(false);
             status = await api.GetNodeStatusAsync(cancellationToken).ConfigureAwait(false);
         }
 

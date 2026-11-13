@@ -16,7 +16,7 @@ public sealed class MaintenanceExecutorTests : IDisposable
     {
         agent.StopAsync(Arg.Any<CancellationToken>()).Callback(() => calls.Add("stop"));
         agent.StartAsync(Arg.Any<CancellationToken>()).Callback(() => calls.Add("start"));
-        drain.DrainAsync(Arg.Any<string>(), Arg.Any<Func<bool>?>(), Arg.Any<CancellationToken>()).Returns(true).Callback(() => calls.Add("drain"));
+        drain.DrainAsync(Arg.Any<string>(), Arg.Any<Func<bool>?>(), Arg.Any<TimeSpan?>(), Arg.Any<CancellationToken>()).Returns(true).Callback(() => calls.Add("drain"));
         drain.RestoreAsync(Arg.Any<bool>(), Arg.Any<CancellationToken>()).Callback((marked, _) => calls.Add($"restore({marked})"));
         executor = new MaintenanceExecutor(agent.Object, drain.Object, logger);
     }
@@ -40,19 +40,27 @@ public sealed class MaintenanceExecutorTests : IDisposable
     }
 
     [Test]
-    public async Task RunWithAgentStoppedAsync_PassesNameAndUrgencyToDrain()
+    public async Task RunWithAgentStoppedAsync_PassesNameUrgencyAndTimeoutToDrain()
     {
         Func<bool> isUrgent = () => true;
 
-        await executor.RunWithAgentStoppedAsync("Speicher", _ => Task.FromResult(1), isUrgent, TestData.Ct);
+        await executor.RunWithAgentStoppedAsync("Speicher", _ => Task.FromResult(1), isUrgent, TimeSpan.FromMinutes(7), TestData.Ct);
 
-        drain.DrainAsync("Speicher", isUrgent, Arg.Any<CancellationToken>()).WasCalled(Times.Once);
+        drain.DrainAsync("Speicher", isUrgent, TimeSpan.FromMinutes(7), Arg.Any<CancellationToken>()).WasCalled(Times.Once);
+    }
+
+    [Test]
+    public async Task RunWithAgentStoppedAsync_WithoutOptions_UsesConfiguredDrainTimeout()
+    {
+        await executor.RunWithAgentStoppedAsync("Test", _ => Task.FromResult(1), TestData.Ct);
+
+        drain.DrainAsync("Test", null, null, Arg.Any<CancellationToken>()).WasCalled(Times.Once);
     }
 
     [Test]
     public async Task RunWithAgentStoppedAsync_NotMarkedOffline_RestoreGetsFalse()
     {
-        drain.DrainAsync(Arg.Any<string>(), Arg.Any<Func<bool>?>(), Arg.Any<CancellationToken>()).Returns(false);
+        drain.DrainAsync(Arg.Any<string>(), Arg.Any<Func<bool>?>(), Arg.Any<TimeSpan?>(), Arg.Any<CancellationToken>()).Returns(false);
 
         await executor.RunWithAgentStoppedAsync("Test", _ => Task.FromResult(1), TestData.Ct);
 
@@ -71,7 +79,7 @@ public sealed class MaintenanceExecutorTests : IDisposable
     [Test]
     public async Task RunWithAgentStoppedAsync_CancelledWhileDraining_DoesNotStopAgent()
     {
-        drain.DrainAsync(Arg.Any<string>(), Arg.Any<Func<bool>?>(), Arg.Any<CancellationToken>()).Throws(new OperationCanceledException());
+        drain.DrainAsync(Arg.Any<string>(), Arg.Any<Func<bool>?>(), Arg.Any<TimeSpan?>(), Arg.Any<CancellationToken>()).Throws(new OperationCanceledException());
 
         await Assert.That(async () => { await executor.RunWithAgentStoppedAsync("Test", _ => Task.FromResult(1), TestData.Ct); })
             .Throws<OperationCanceledException>();

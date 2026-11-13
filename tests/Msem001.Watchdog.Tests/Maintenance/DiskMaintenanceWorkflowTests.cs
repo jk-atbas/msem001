@@ -43,7 +43,7 @@ public sealed class DiskMaintenanceWorkflowTests : IDisposable
     public async Task RunAsync_PassesCriticalSpaceCheckToDrain()
     {
         Func<bool>? isUrgent = null;
-        drain.DrainAsync(Arg.Any<string>(), Arg.Any<Func<bool>?>(), Arg.Any<CancellationToken>()).Callback((_, urgent, _) => isUrgent = urgent);
+        drain.DrainAsync(Arg.Any<string>(), Arg.Any<Func<bool>?>(), Arg.Any<TimeSpan?>(), Arg.Any<CancellationToken>()).Callback((_, urgent, _, _) => isUrgent = urgent);
         disk.GetDiskSpace().ReturnsSequentially(TestData.Disk(freeGb: 40), TestData.Disk(freeGb: 250));
         await workflow.RunAsync(MaintenanceTrigger.Periodic, TestData.Ct);
 
@@ -57,6 +57,16 @@ public sealed class DiskMaintenanceWorkflowTests : IDisposable
         disk.GetDiskSpace().Throws(new IOException("Laufwerk weg"));
         await Assert.That(isUrgent()).IsFalse();
         logger.VerifyLog().AtLevel(LogLevel.Warning).WithException<IOException>().WasCalled(Times.Once);
+    }
+
+    [Test]
+    public async Task RunAsync_UsesConfiguredDrainTimeout()
+    {
+        disk.GetDiskSpace().ReturnsSequentially(TestData.Disk(freeGb: 40), TestData.Disk(freeGb: 250));
+
+        await workflow.RunAsync(MaintenanceTrigger.Periodic, TestData.Ct);
+
+        drain.DrainAsync("Speicherbereinigung", Arg.Any<Func<bool>?>(), null, Arg.Any<CancellationToken>()).WasCalled(Times.Once);
     }
 
     [Test]

@@ -59,7 +59,9 @@ bricht eine Wartung laufende Builds nicht mehr ab:
 
 1. Der Agent wird in Jenkins *vorübergehend offline* geschaltet (Grund „[MSEM001 Watchdog] Wartung …“), es starten
    keine neuen Builds.
-2. Der Dienst wartet, bis kein Build mehr läuft, höchstens `DrainTimeout` (1 h), Abfrage alle 30 s.
+2. Der Dienst wartet, bis kein Build mehr läuft, höchstens `DrainTimeout` (1 h), Abfrage alle 30 s. Bei der
+   Podman-/win-sshproxy-Reparatur höchstens `Watchdog:Podman:RepairDrainTimeout` (10 min), weil Builds mit
+   Docker ohne funktionierenden Proxy ohnehin nicht fertig werden.
 3. Erst dann wird der Agent beendet und die Wartung ausgeführt.
 4. Danach startet der Agent neu und wird in Jenkins wieder online geschaltet.
 

@@ -38,7 +38,7 @@ internal sealed partial class StartupDiagnostics(
 
         var agent = settings.JenkinsAgent;
         if (agent.Enabled && agent.IsApiConfigured)
-            LogGracefulMaintenance(logger, agent.ApiUser, agent.DrainTimeout, settings.Disk.ImmediateMaintenanceThresholdGb);
+            LogGracefulMaintenance(logger, agent.ApiUser, agent.DrainTimeout, settings.Podman.RepairDrainTimeout, settings.Disk.ImmediateMaintenanceThresholdGb);
         else if (agent.Enabled)
             LogGracefulMaintenanceDisabled(logger);
 
@@ -90,8 +90,8 @@ internal sealed partial class StartupDiagnostics(
     [LoggerMessage(EventId = 104, Level = LogLevel.Information, Message = "RAM-Überwachung aktiv: {Enabled}, Error > {ErrorPercent} %, Critical > {CriticalPercent} %, Intervall {Interval}, Meldung nach {SustainedDuration} am Stück")]
     private static partial void LogMemoryConfiguration(ILogger logger, bool enabled, double errorPercent, double criticalPercent, TimeSpan interval, TimeSpan sustainedDuration);
 
-    [LoggerMessage(EventId = 107, Level = LogLevel.Information, Message = "Sanfte Wartung aktiv (Jenkins-API als {ApiUser}): Agent wird vor einer Wartung offline geschaltet, laufende Builds werden höchstens {DrainTimeout} abgewartet, unter {ImmediateGb} GB freiem Speicher sofort")]
-    private static partial void LogGracefulMaintenance(ILogger logger, string apiUser, TimeSpan drainTimeout, double immediateGb);
+    [LoggerMessage(EventId = 107, Level = LogLevel.Information, Message = "Sanfte Wartung aktiv (Jenkins-API als {ApiUser}): Agent wird vor einer Wartung offline geschaltet, laufende Builds werden höchstens {DrainTimeout} abgewartet (Podman-Reparatur {RepairDrainTimeout}), unter {ImmediateGb} GB freiem Speicher sofort")]
+    private static partial void LogGracefulMaintenance(ILogger logger, string apiUser, TimeSpan drainTimeout, TimeSpan repairDrainTimeout, double immediateGb);
 
     [LoggerMessage(EventId = 108, Level = LogLevel.Warning, Message = "Sanfte Wartung inaktiv (Watchdog:JenkinsAgent:ApiUser/ApiToken nicht gesetzt): eine Wartung bricht laufende Builds sofort ab")]
     private static partial void LogGracefulMaintenanceDisabled(ILogger logger);

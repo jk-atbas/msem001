@@ -31,7 +31,7 @@ public sealed class JenkinsAgentDrainTests
     {
         api.IsConfigured.Returns(false);
 
-        await Assert.That(await drain.DrainAsync("Test", null, TestData.Ct)).IsFalse();
+        await Assert.That(await drain.DrainAsync("Test", null, null, TestData.Ct)).IsFalse();
 
         api.GetNodeStatusAsync(Arg.Any<CancellationToken>()).WasNeverCalled();
         logger.VerifyLog().AtLevel(LogLevel.Information).ContainingMessage("Kein Jenkins-API-Token").WasCalled(Times.Once);
@@ -40,7 +40,7 @@ public sealed class JenkinsAgentDrainTests
     [Test]
     public async Task DrainAsync_UrgentFromStart_DoesNotMarkOffline()
     {
-        await Assert.That(await drain.DrainAsync("Test", () => true, TestData.Ct)).IsFalse();
+        await Assert.That(await drain.DrainAsync("Test", () => true, null, TestData.Ct)).IsFalse();
 
         api.GetNodeStatusAsync(Arg.Any<CancellationToken>()).WasNeverCalled();
         logger.VerifyLog().AtLevel(LogLevel.Warning).ContainingMessage("dringend").WasCalled(Times.Once);
@@ -53,7 +53,7 @@ public sealed class JenkinsAgentDrainTests
         string? message = null;
         api.ToggleOfflineAsync(Arg.Any<string?>(), Arg.Any<CancellationToken>()).Callback((m, _) => message = m);
 
-        await Assert.That(await drain.DrainAsync("Speicherbereinigung", null, TestData.Ct)).IsTrue();
+        await Assert.That(await drain.DrainAsync("Speicherbereinigung", null, null, TestData.Ct)).IsTrue();
 
         await Assert.That(message).StartsWith(JenkinsAgentDrain.OfflineMarker).And.Contains("Speicherbereinigung");
         api.GetNodeStatusAsync(Arg.Any<CancellationToken>()).WasCalled(Times.Once);
@@ -65,7 +65,7 @@ public sealed class JenkinsAgentDrainTests
     {
         api.GetNodeStatusAsync(Arg.Any<CancellationToken>()).ReturnsSequentially(OnlineBusy, OwnOfflineBusy, OwnOfflineBusy, OwnOfflineIdle);
 
-        var task = drain.DrainAsync("Test", () => false, TestData.Ct);
+        var task = drain.DrainAsync("Test", () => false, null, TestData.Ct);
         await Wait.UntilAsync(() => task.IsCompleted, time, TimeSpan.FromSeconds(30));
 
         await Assert.That(await task).IsTrue();
@@ -81,11 +81,25 @@ public sealed class JenkinsAgentDrainTests
         var (localDrain, localLogger) = CreateDrain(o => o.JenkinsAgent.DrainTimeout = TimeSpan.FromMinutes(2));
         api.GetNodeStatusAsync(Arg.Any<CancellationToken>()).ReturnsSequentially(OnlineBusy, OwnOfflineBusy);
 
-        var task = localDrain.DrainAsync("Test", null, TestData.Ct);
+        var task = localDrain.DrainAsync("Test", null, null, TestData.Ct);
         await Wait.UntilAsync(() => task.IsCompleted, time, TimeSpan.FromSeconds(30));
 
         await Assert.That(await task).IsTrue();
         localLogger.VerifyLog().AtLevel(LogLevel.Warning).ContainingMessage("läuft noch ein Build").WasCalled(Times.Once);
+    }
+
+    [Test]
+    public async Task DrainAsync_TimeoutOverride_TakesPrecedenceOverConfiguredTimeout()
+    {
+        api.GetNodeStatusAsync(Arg.Any<CancellationToken>()).ReturnsSequentially(OnlineBusy, OwnOfflineBusy);
+
+        var task = drain.DrainAsync("Podman-Reparatur", null, TimeSpan.FromMinutes(10), TestData.Ct);
+        await Wait.UntilAsync(() => task.IsCompleted, time, TimeSpan.FromSeconds(30));
+
+        await Assert.That(await task).IsTrue();
+        logger.VerifyLog().AtLevel(LogLevel.Information).ContainingMessage("wartet auf laufende Builds (höchstens 00:10:00").WasCalled(Times.Once);
+        logger.VerifyLog().AtLevel(LogLevel.Warning).ContainingMessage("Nach 00:10:00 läuft noch ein Build").WasCalled(Times.Once);
+        await Assert.That(time.GetUtcNow() - new DateTimeOffset(2026, 11, 13, 8, 0, 0, TimeSpan.Zero)).IsLessThan(TimeSpan.FromMinutes(15));
     }
 
     [Test]
@@ -94,7 +108,7 @@ public sealed class JenkinsAgentDrainTests
         var (localDrain, _) = CreateDrain(o => o.JenkinsAgent.DrainTimeout = TimeSpan.Zero);
         api.GetNodeStatusAsync(Arg.Any<CancellationToken>()).Returns(OnlineBusy);
 
-        await Assert.That(await localDrain.DrainAsync("Test", null, TestData.Ct)).IsTrue();
+        await Assert.That(await localDrain.DrainAsync("Test", null, null, TestData.Ct)).IsTrue();
 
         api.GetNodeStatusAsync(Arg.Any<CancellationToken>()).WasCalled(Times.Once);
     }
@@ -105,7 +119,7 @@ public sealed class JenkinsAgentDrainTests
         api.GetNodeStatusAsync(Arg.Any<CancellationToken>()).ReturnsSequentially(OnlineBusy, OwnOfflineBusy);
         var checks = 0;
 
-        var task = drain.DrainAsync("Test", () => ++checks > 3, TestData.Ct);
+        var task = drain.DrainAsync("Test", () => ++checks > 3, null, TestData.Ct);
         await Wait.UntilAsync(() => task.IsCompleted, time, TimeSpan.FromSeconds(30));
 
         await Assert.That(await task).IsTrue();
@@ -117,7 +131,7 @@ public sealed class JenkinsAgentDrainTests
     {
         api.GetNodeStatusAsync(Arg.Any<CancellationToken>()).Returns(ForeignOfflineIdle);
 
-        await Assert.That(await drain.DrainAsync("Test", null, TestData.Ct)).IsFalse();
+        await Assert.That(await drain.DrainAsync("Test", null, null, TestData.Ct)).IsFalse();
 
         await Assert.That(toggles).IsEmpty();
         logger.VerifyLog().ContainingMessage("bereits offline geschaltet: Hardware-Tausch").WasCalled(Times.Once);
@@ -128,7 +142,7 @@ public sealed class JenkinsAgentDrainTests
     {
         api.GetNodeStatusAsync(Arg.Any<CancellationToken>()).Returns(OwnOfflineIdle);
 
-        await Assert.That(await drain.DrainAsync("Test", null, TestData.Ct)).IsTrue();
+        await Assert.That(await drain.DrainAsync("Test", null, null, TestData.Ct)).IsTrue();
 
         await Assert.That(toggles).IsEmpty();
     }
@@ -138,7 +152,7 @@ public sealed class JenkinsAgentDrainTests
     {
         api.GetNodeStatusAsync(Arg.Any<CancellationToken>()).Throws(new HttpRequestException("connection refused"));
 
-        await Assert.That(await drain.DrainAsync("Test", null, TestData.Ct)).IsFalse();
+        await Assert.That(await drain.DrainAsync("Test", null, null, TestData.Ct)).IsFalse();
 
         logger.VerifyLog().AtLevel(LogLevel.Error).ContainingMessage("Jenkins-API nicht nutzbar").WithException<HttpRequestException>().WasCalled(Times.Once);
     }
@@ -149,7 +163,7 @@ public sealed class JenkinsAgentDrainTests
         api.GetNodeStatusAsync(Arg.Any<CancellationToken>()).Returns(OnlineBusy);
         api.ToggleOfflineAsync(Arg.Any<string?>(), Arg.Any<CancellationToken>()).Callback(() => api.GetNodeStatusAsync(Arg.Any<CancellationToken>()).Throws(new HttpRequestException("weg")));
 
-        var task = drain.DrainAsync("Test", null, TestData.Ct);
+        var task = drain.DrainAsync("Test", null, null, TestData.Ct);
         await Wait.UntilAsync(() => task.IsCompleted, time, TimeSpan.FromSeconds(30));
 
         await Assert.That(await task).IsTrue();
@@ -161,7 +175,7 @@ public sealed class JenkinsAgentDrainTests
     {
         api.GetNodeStatusAsync(Arg.Any<CancellationToken>()).Throws(new TaskCanceledException("timeout", new TimeoutException()));
 
-        await Assert.That(await drain.DrainAsync("Test", null, TestData.Ct)).IsFalse();
+        await Assert.That(await drain.DrainAsync("Test", null, null, TestData.Ct)).IsFalse();
 
         logger.VerifyLog().AtLevel(LogLevel.Error).ContainingMessage("Jenkins-API nicht nutzbar").WasCalled(Times.Once);
     }
@@ -172,7 +186,7 @@ public sealed class JenkinsAgentDrainTests
         api.GetNodeStatusAsync(Arg.Any<CancellationToken>()).ReturnsSequentially(OnlineBusy, OwnOfflineBusy);
         using var stopping = new CancellationTokenSource();
 
-        var task = drain.DrainAsync("Test", null, stopping.Token);
+        var task = drain.DrainAsync("Test", null, null, stopping.Token);
         await Wait.UntilAsync(() => toggles.Count == 1);
         await stopping.CancelAsync();
 

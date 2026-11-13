@@ -35,6 +35,16 @@ public sealed class BuildAgentHealthMonitorTests : IDisposable
     public void Dispose() => executor.Dispose();
 
     [Test]
+    public async Task CheckAsync_Repair_WaitsOnlyRepairDrainTimeoutForBuilds()
+    {
+        health.CheckAsync(Arg.Any<CancellationToken>()).ReturnsSequentially(TestData.MachineStopped(), TestData.MachineStopped(), TestData.Healthy());
+
+        await monitor.CheckAsync(TestData.Ct);
+
+        drain.DrainAsync("Podman-Reparatur", null, TimeSpan.FromMinutes(10), Arg.Any<CancellationToken>()).WasCalled(Times.Once);
+    }
+
+    [Test]
     public async Task CheckAsync_Healthy_EnsuresAgentIsRunning()
     {
         health.CheckAsync(Arg.Any<CancellationToken>()).Returns(TestData.Healthy());

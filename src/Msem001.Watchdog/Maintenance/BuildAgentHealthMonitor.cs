@@ -57,7 +57,12 @@ internal sealed partial class BuildAgentHealthMonitor(
         }
 
         var repaired = await executor
-            .RunWithAgentStoppedAsync("Podman-Reparatur", token => podmanRecovery.EnsureHealthyAsync(allowReset: true, token), cancellationToken)
+            .RunWithAgentStoppedAsync(
+                "Podman-Reparatur",
+                token => podmanRecovery.EnsureHealthyAsync(allowReset: true, token),
+                isUrgent: null,
+                settings.RepairDrainTimeout,
+                cancellationToken)
             .ConfigureAwait(false);
 
         if (repaired.IsHealthy)

@@ -74,6 +74,7 @@ internal sealed class WatchdogOptionsValidator : IValidateOptions<WatchdogOption
         RequireNotNegative(podman.StartupDelay, "Watchdog:Podman:StartupDelay", errors);
         RequirePositive(podman.CheckInterval, "Watchdog:Podman:CheckInterval", errors);
         RequireNotNegative(podman.RepairRetryInterval, "Watchdog:Podman:RepairRetryInterval", errors);
+        RequireNotNegative(podman.RepairDrainTimeout, "Watchdog:Podman:RepairDrainTimeout", errors);
         RequirePositive(podman.ProbeTimeout, "Watchdog:Podman:ProbeTimeout", errors);
         RequirePositive(podman.CommandTimeout, "Watchdog:Podman:CommandTimeout", errors);
         RequirePositive(podman.StartTimeout, "Watchdog:Podman:StartTimeout", errors);

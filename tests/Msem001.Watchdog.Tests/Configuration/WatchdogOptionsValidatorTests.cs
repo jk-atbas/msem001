@@ -29,6 +29,7 @@ public sealed class WatchdogOptionsValidatorTests
         yield return () => ("Memory:SustainedDuration", o => o.Memory.SustainedDuration = TimeSpan.FromSeconds(-1));
         yield return () => ("MachineName", o => o.Podman.MachineName = string.Empty);
         yield return () => ("FailureThreshold", o => o.Podman.FailureThreshold = 0);
+        yield return () => ("RepairDrainTimeout", o => o.Podman.RepairDrainTimeout = TimeSpan.FromSeconds(-1));
         yield return () => ("ProbeTimeout", o => o.Podman.ProbeTimeout = TimeSpan.Zero);
         yield return () => ("PowerShellExecutable", o => o.Scripts.PowerShellExecutable = string.Empty);
         yield return () => ("PodmanResetTimeout", o => o.Scripts.PodmanResetTimeout = TimeSpan.Zero);
