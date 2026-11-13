@@ -1,0 +1,12 @@
+T:System.IO.File;Use IFileSystem.File (System.IO.Abstractions) for testability
+T:System.IO.Directory;Use IFileSystem.Directory (System.IO.Abstractions) for testability
+T:System.IO.Path;Use IFileSystem.Path (System.IO.Abstractions) for testability
+T:System.IO.DriveInfo;Use IFileSystem.DriveInfo (System.IO.Abstractions) for testability
+T:System.IO.FileInfo;Use IFileSystem.FileInfo (System.IO.Abstractions) for testability
+T:System.IO.DirectoryInfo;Use IFileSystem.DirectoryInfo (System.IO.Abstractions) for testability
+T:System.Diagnostics.Process;Use IProcessFactory / IProcess for testability
+P:System.AppContext.BaseDirectory;Use IHostEnvironment.ContentRootPath for testability
+P:System.DateTime.Now;Use TimeProvider for testability
+P:System.DateTime.UtcNow;Use TimeProvider for testability
+P:System.DateTimeOffset.Now;Use TimeProvider for testability
+P:System.DateTimeOffset.UtcNow;Use TimeProvider for testability
