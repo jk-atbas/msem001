@@ -3,6 +3,7 @@ using Microsoft.Extensions.Hosting.Internal;
 using Microsoft.Extensions.Options;
 using Msem001.Watchdog.Configuration;
 using Msem001.Watchdog.Disk;
+using Msem001.Watchdog.Memory;
 using Msem001.Watchdog.Podman;
 using Msem001.Watchdog.Processes;
 using Testably.Abstractions.Testing;
@@ -56,6 +57,12 @@ internal static class TestData
 
     public static DiskSpaceInfo Disk(double freeGb, double totalGb = 1000) =>
         new(@"C:\", (long)(totalGb * DiskSpaceInfo.BytesPerGigabyte), (long)(freeGb * DiskSpaceInfo.BytesPerGigabyte));
+
+    public static MemoryInfo Memory(double usedPercent, double totalGb = 32)
+    {
+        var totalBytes = (long)(totalGb * DiskSpaceInfo.BytesPerGigabyte);
+        return new MemoryInfo(totalBytes, (long)Math.Round(totalBytes * (100 - usedPercent) / 100));
+    }
 
     public static ProcessRunResult Success(params string[] standardOutput) =>
         new(0, false, standardOutput, [], TimeSpan.FromSeconds(1));

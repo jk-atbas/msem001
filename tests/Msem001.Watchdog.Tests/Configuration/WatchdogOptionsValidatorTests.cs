@@ -16,6 +16,10 @@ public sealed class WatchdogOptionsValidatorTests
         yield return () => ("CriticalUsagePercent", o => o.Disk.CriticalUsagePercent = 80);
         yield return () => ("Disk:CheckInterval", o => o.Disk.CheckInterval = TimeSpan.Zero);
         yield return () => ("MaintenanceCooldown", o => o.Disk.MaintenanceCooldown = TimeSpan.FromSeconds(-1));
+        yield return () => ("Memory:ErrorUsagePercent", o => o.Memory.ErrorUsagePercent = 0);
+        yield return () => ("Memory:CriticalUsagePercent", o => o.Memory.CriticalUsagePercent = 85);
+        yield return () => ("Memory:CheckInterval", o => o.Memory.CheckInterval = TimeSpan.Zero);
+        yield return () => ("Memory:SustainedDuration", o => o.Memory.SustainedDuration = TimeSpan.FromSeconds(-1));
         yield return () => ("MachineName", o => o.Podman.MachineName = string.Empty);
         yield return () => ("FailureThreshold", o => o.Podman.FailureThreshold = 0);
         yield return () => ("ProbeTimeout", o => o.Podman.ProbeTimeout = TimeSpan.Zero);
@@ -53,6 +57,8 @@ public sealed class WatchdogOptionsValidatorTests
         var options = new WatchdogOptions();
         options.JenkinsAgent.Enabled = false;
         options.Mail.Enabled = false;
+        options.Memory.Enabled = false;
+        options.Memory.CheckInterval = TimeSpan.Zero;
 
         await Assert.That(validator.Validate(null, options).Succeeded).IsTrue();
     }

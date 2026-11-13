@@ -1,5 +1,6 @@
 using Microsoft.Extensions.Options;
 using Msem001.Watchdog.Configuration;
+using Msem001.Watchdog.Monitoring;
 
 namespace Msem001.Watchdog.Disk;
 
@@ -15,59 +16,39 @@ internal sealed partial class DiskUsageAlertEvaluator(
     ILogger<DiskUsageAlertEvaluator> logger)
 {
     private readonly Lock sync = new();
-    private DiskUsageLevel lastLevel = DiskUsageLevel.Normal;
-    private DateTimeOffset? lastAlertAt;
+    private readonly UsageAlertTracker tracker = new();
 
-    public DiskUsageLevel Evaluate(DiskSpaceInfo disk)
+    public UsageLevel Evaluate(DiskSpaceInfo disk)
     {
         ArgumentNullException.ThrowIfNull(disk);
 
         var settings = options.Value.Disk;
-        var level = Classify(disk.UsedPercent, settings);
-        var now = timeProvider.GetUtcNow();
+        var level = UsageAlertTracker.Classify(disk.UsedPercent, settings.ErrorUsagePercent, settings.CriticalUsagePercent);
 
+        UsageAlertDecision decision;
         lock (sync)
+            decision = tracker.Track(level, timeProvider.GetUtcNow(), settings.UsageAlertRepeatInterval);
+
+        switch (decision)
         {
-            var previous = lastLevel;
-            lastLevel = level;
-
-            if (level == DiskUsageLevel.Normal)
-            {
-                if (previous != DiskUsageLevel.Normal)
-                    LogUsageNormal(logger, disk.Drive, disk.UsedPercent, disk.FreeGigabytes);
-
-                lastAlertAt = null;
-                return level;
-            }
-
-            var escalated = level > previous;
-            var repeatDue = lastAlertAt is not { } last || now - last >= settings.UsageAlertRepeatInterval;
-            if (!escalated && !repeatDue)
-            {
-                if (level < previous)
-                    LogUsageImproved(logger, disk.Drive, disk.UsedPercent, disk.FreeGigabytes);
-                else
-                    LogUsageUnchanged(logger, disk.Drive, disk.UsedPercent, disk.FreeGigabytes);
-
-                return level;
-            }
-
-            if (level == DiskUsageLevel.Critical)
+            case UsageAlertDecision.Alert when level == UsageLevel.Critical:
                 LogUsageCritical(logger, disk.Drive, disk.UsedPercent, disk.FreeGigabytes, settings.CriticalUsagePercent);
-            else
+                break;
+            case UsageAlertDecision.Alert:
                 LogUsageHigh(logger, disk.Drive, disk.UsedPercent, disk.FreeGigabytes, settings.ErrorUsagePercent);
-
-            lastAlertAt = now;
-            return level;
+                break;
+            case UsageAlertDecision.Recovered:
+                LogUsageNormal(logger, disk.Drive, disk.UsedPercent, disk.FreeGigabytes);
+                break;
+            case UsageAlertDecision.Improved:
+                LogUsageImproved(logger, disk.Drive, disk.UsedPercent, disk.FreeGigabytes);
+                break;
+            case UsageAlertDecision.Unchanged:
+                LogUsageUnchanged(logger, disk.Drive, disk.UsedPercent, disk.FreeGigabytes);
+                break;
         }
-    }
 
-    internal static DiskUsageLevel Classify(double usedPercent, DiskOptions settings)
-    {
-        if (usedPercent > settings.CriticalUsagePercent)
-            return DiskUsageLevel.Critical;
-
-        return usedPercent > settings.ErrorUsagePercent ? DiskUsageLevel.High : DiskUsageLevel.Normal;
+        return level;
     }
 
     [LoggerMessage(EventId = 1100, Level = LogLevel.Critical, Message = "Speicherplatz kritisch: {Drive} zu {UsedPercent:F1} % belegt (Schwelle {ThresholdPercent} %), nur noch {FreeGb:F1} GB frei")]

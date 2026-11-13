@@ -3,14 +3,16 @@ using System.Text;
 using Microsoft.Extensions.Options;
 using Msem001.Watchdog.Configuration;
 using Msem001.Watchdog.Disk;
+using Msem001.Watchdog.Memory;
 
 namespace Msem001.Watchdog.Alerting;
 
 /// <summary>
-/// Builds the alert mail. Every mail contains the current free disk space.
+/// Builds the alert mail. Every mail contains the current free disk space and RAM usage.
 /// </summary>
 internal sealed class AlertMailComposer(
     IDiskSpaceProbe diskSpaceProbe,
+    IMemoryProbe memoryProbe,
     IEnvironmentProvider environment,
     IOptions<WatchdogOptions> options,
     TimeProvider timeProvider)
@@ -27,6 +29,8 @@ internal sealed class AlertMailComposer(
         var highest = entries.MaxBy(e => e.Level)!;
         var disk = TryGetDiskSpace(out var diskError);
         var diskText = disk?.ToDisplayString() ?? $"unbekannt ({diskError})";
+        var memory = TryGetMemory(out var memoryError);
+        var memoryText = memory?.ToDisplayString() ?? $"unbekannt ({memoryError})";
 
         var subject = new StringBuilder()
             .Append(settings.SubjectPrefix).Append(' ')
@@ -36,12 +40,15 @@ internal sealed class AlertMailComposer(
             subject.Append(CultureInfo.InvariantCulture, $" (+{entries.Count - 1} weitere)");
         if (disk is not null)
             subject.Append(CultureInfo.InvariantCulture, $" | {disk.FreeGigabytes:F1} GB frei");
+        if (memory is not null)
+            subject.Append(CultureInfo.InvariantCulture, $" | RAM {memory.UsedPercent:F1} %");
 
         var localTimeZone = timeProvider.LocalTimeZone;
         var body = new StringBuilder()
             .AppendLine(CultureInfo.InvariantCulture, $"Watchdog-Meldung von {environment.MachineName}")
             .AppendLine(CultureInfo.InvariantCulture, $"Zeitpunkt:            {FormatTimestamp(timeProvider.GetUtcNow(), localTimeZone)}")
             .AppendLine(CultureInfo.InvariantCulture, $"Freier Speicherplatz: {diskText}")
+            .AppendLine(CultureInfo.InvariantCulture, $"RAM-Auslastung:       {memoryText}")
             .AppendLine()
             .AppendLine(CultureInfo.InvariantCulture, $"{entries.Count} Meldung(en):");
 
@@ -77,6 +84,20 @@ internal sealed class AlertMailComposer(
     }
 
     private static string Truncate(string value, int maxLength) => value.Length <= maxLength ? value : string.Concat(value.AsSpan(0, maxLength - 3), "...");
+
+    private MemoryInfo? TryGetMemory(out string? error)
+    {
+        try
+        {
+            error = null;
+            return memoryProbe.GetMemory();
+        }
+        catch (Exception ex) when (ex is System.ComponentModel.Win32Exception or InvalidOperationException)
+        {
+            error = ex.Message;
+            return null;
+        }
+    }
 
     private DiskSpaceInfo? TryGetDiskSpace(out string? error)
     {

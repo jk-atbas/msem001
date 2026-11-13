@@ -6,6 +6,7 @@ using Microsoft.Extensions.Options;
 using Msem001.Watchdog.Alerting;
 using Msem001.Watchdog.Configuration;
 using Msem001.Watchdog.Hosting;
+using Msem001.Watchdog.Memory;
 using Msem001.Watchdog.Processes;
 using Msem001.Watchdog.Processes.Abstractions;
 using Msem001.Watchdog.Tests.TestSupport;
@@ -43,10 +44,13 @@ public sealed class HostingTests
         await Assert.That(options.Disk.CleanupThresholdGb).IsEqualTo(50);
         await Assert.That(options.Disk.PodmanResetThresholdGb).IsEqualTo(200);
         await Assert.That(options.Scripts.PodmanResetArguments).IsEmpty();
+        await Assert.That(options.Memory.ErrorUsagePercent).IsEqualTo(90);
+        await Assert.That(options.Memory.CriticalUsagePercent).IsEqualTo(95);
+        await Assert.That(options.Memory.SustainedDuration).IsEqualTo(TimeSpan.FromMinutes(5));
 
         var hostedServices = provider.GetServices<IHostedService>().Select(s => s.GetType().Name);
         await Assert.That(string.Join(",", hostedServices)).IsEqualTo(
-            $"{nameof(StartupDiagnostics)},{nameof(MailAlertDispatcher)},{nameof(BuildAgentHealthWorker)},{nameof(DiskMonitorWorker)},{nameof(NightlyPreCheckWorker)}");
+            $"{nameof(StartupDiagnostics)},{nameof(MailAlertDispatcher)},{nameof(BuildAgentHealthWorker)},{nameof(DiskMonitorWorker)},{nameof(MemoryMonitorWorker)},{nameof(NightlyPreCheckWorker)}");
         await Assert.That(provider.GetServices<ILoggerProvider>()).Contains(p => p is MailAlertLoggerProvider);
 
         // Real system abstractions in production
@@ -54,6 +58,7 @@ public sealed class HostingTests
         await Assert.That(provider.GetRequiredService<IEnvironmentProvider>()).IsSameReferenceAs(SystemEnvironmentProvider.Instance);
         await Assert.That(provider.GetRequiredService<IProcessFactory>()).IsTypeOf<ProcessFactory>();
         await Assert.That(provider.GetRequiredService<IProcessQuery>()).IsTypeOf<WmiProcessQuery>();
+        await Assert.That(provider.GetRequiredService<IMemoryProbe>()).IsTypeOf<WindowsMemoryProbe>();
     }
 
     [Test]
@@ -104,6 +109,7 @@ public sealed class HostingTests
 
         logger.VerifyLog().AtLevel(LogLevel.Information).ContainingMessage(@"auf MSEM001 als MSEM001\atbas (Administrator/elevated: True)").WasCalled(Times.Once);
         logger.VerifyLog().AtLevel(LogLevel.Information).ContainingMessage("Bereinigung < 50 GB").WasCalled(Times.Once);
+        logger.VerifyLog().AtLevel(LogLevel.Information).ContainingMessage("RAM-Überwachung aktiv: True, Error > 90 %, Critical > 95 %").WasCalled(Times.Once);
         logger.VerifyLog().AtLevel(LogLevel.Information).ContainingMessage("beendet").WasCalled(Times.Once);
         logger.VerifyNoLog(LogLevel.Error);
     }

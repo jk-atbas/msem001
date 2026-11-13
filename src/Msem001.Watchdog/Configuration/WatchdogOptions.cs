@@ -11,6 +11,9 @@ public sealed class WatchdogOptions
     /// <summary>Disk space monitoring and maintenance thresholds.</summary>
     public DiskOptions Disk { get; set; } = new();
 
+    /// <summary>RAM usage monitoring.</summary>
+    public MemoryOptions Memory { get; set; } = new();
+
     /// <summary>Scheduled checks (nightly pre-check).</summary>
     public ScheduleOptions Schedule { get; set; } = new();
 

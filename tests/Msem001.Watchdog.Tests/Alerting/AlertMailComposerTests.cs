@@ -1,6 +1,8 @@
+using System.ComponentModel;
 using Microsoft.Extensions.Time.Testing;
 using Msem001.Watchdog.Alerting;
 using Msem001.Watchdog.Disk;
+using Msem001.Watchdog.Memory;
 using Msem001.Watchdog.Tests.TestSupport;
 
 namespace Msem001.Watchdog.Tests.Alerting;
@@ -10,6 +12,7 @@ public sealed class AlertMailComposerTests
     private static readonly DateTimeOffset Now = new(2026, 11, 13, 20, 45, 0, TimeSpan.Zero);
 
     private readonly Mock<IDiskSpaceProbe> disk = Mock.Of<IDiskSpaceProbe>();
+    private readonly Mock<IMemoryProbe> memory = Mock.Of<IMemoryProbe>();
     private readonly AlertMailComposer composer;
 
     public AlertMailComposerTests()
@@ -17,7 +20,8 @@ public sealed class AlertMailComposerTests
         var time = new FakeTimeProvider(Now);
         time.SetLocalTimeZone(TimeZoneInfo.Utc);
         disk.GetDiskSpace().Returns(TestData.Disk(freeGb: 42.5));
-        composer = new AlertMailComposer(disk.Object, TestData.CreateEnvironment(), TestData.CreateOptions(), time);
+        memory.GetMemory().Returns(TestData.Memory(usedPercent: 63.5, totalGb: 32));
+        composer = new AlertMailComposer(disk.Object, memory.Object, TestData.CreateEnvironment(), TestData.CreateOptions(), time);
     }
 
     [Test]
@@ -25,7 +29,7 @@ public sealed class AlertMailComposerTests
     {
         var mail = composer.Compose([Entry(LogLevel.Error, "Speicherplatz knapp")]);
 
-        await Assert.That(mail.Subject).IsEqualTo("[MSEM001 Watchdog] ERROR: Speicherplatz knapp | 42.5 GB frei");
+        await Assert.That(mail.Subject).IsEqualTo("[MSEM001 Watchdog] ERROR: Speicherplatz knapp | 42.5 GB frei | RAM 63.5 %");
     }
 
     [Test]
@@ -40,6 +44,7 @@ public sealed class AlertMailComposerTests
         await Assert.That(mail.Body)
             .Contains("Watchdog-Meldung von MSEM001")
             .And.Contains(@"Freier Speicherplatz: C:\ 42.5 GB frei von 1000.0 GB (95.8 % belegt)")
+            .And.Contains("RAM-Auslastung:       63.5 % belegt (11.7 GB frei von 32.0 GB)")
             .And.Contains("2 Meldung(en)")
             .And.Contains("Skript fehlgeschlagen")
             .And.Contains("CRITICAL Test.Category (EventId 4711)")
@@ -73,6 +78,17 @@ public sealed class AlertMailComposerTests
 
         await Assert.That(mail.Subject).DoesNotContain("GB frei");
         await Assert.That(mail.Body).Contains("unbekannt (Laufwerk weg)");
+    }
+
+    [Test]
+    public async Task Compose_MemoryProbeFails_StillComposesMail()
+    {
+        memory.GetMemory().Throws(new Win32Exception(5, "Zugriff verweigert"));
+
+        var mail = composer.Compose([Entry(LogLevel.Error, "x")]);
+
+        await Assert.That(mail.Subject).DoesNotContain("RAM");
+        await Assert.That(mail.Body).Contains("RAM-Auslastung:       unbekannt (Zugriff verweigert)");
     }
 
     [Test]

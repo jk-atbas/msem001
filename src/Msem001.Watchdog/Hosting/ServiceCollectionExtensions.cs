@@ -6,6 +6,7 @@ using Msem001.Watchdog.Configuration;
 using Msem001.Watchdog.Disk;
 using Msem001.Watchdog.Jenkins;
 using Msem001.Watchdog.Maintenance;
+using Msem001.Watchdog.Memory;
 using Msem001.Watchdog.Podman;
 using Msem001.Watchdog.Processes;
 using Msem001.Watchdog.Processes.Abstractions;
@@ -35,6 +36,7 @@ internal static class ServiceCollectionExtensions
 
         // Infrastructure
         services.AddSingleton<IDiskSpaceProbe, DriveInfoDiskSpaceProbe>();
+        services.AddSingleton<IMemoryProbe, WindowsMemoryProbe>();
         services.AddSingleton<IProcessRunner, ProcessRunner>();
         services.AddSingleton<ISystemProcesses, SystemProcesses>();
         services.AddSingleton<IMaintenanceScripts, PowerShellMaintenanceScripts>();
@@ -45,6 +47,7 @@ internal static class ServiceCollectionExtensions
 
         // Workflows
         services.AddSingleton<DiskUsageAlertEvaluator>();
+        services.AddSingleton<MemoryUsageAlertEvaluator>();
         services.AddSingleton<PodmanRecovery>();
         services.AddSingleton<MaintenanceExecutor>();
         services.AddSingleton<DiskMaintenanceWorkflow>();
@@ -61,6 +64,7 @@ internal static class ServiceCollectionExtensions
         services.AddHostedService<MailAlertDispatcher>();
         services.AddHostedService<BuildAgentHealthWorker>();
         services.AddHostedService<DiskMonitorWorker>();
+        services.AddHostedService<MemoryMonitorWorker>();
         services.AddHostedService<NightlyPreCheckWorker>();
 
         return services;

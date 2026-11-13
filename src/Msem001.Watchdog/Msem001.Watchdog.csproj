@@ -5,6 +5,9 @@
     <RootNamespace>Msem001.Watchdog</RootNamespace>
     <AssemblyName>Msem001.Watchdog</AssemblyName>
     <UserSecretsId>msem001-watchdog</UserSecretsId>
+    <Version>2.0.0</Version>
+    <!-- LibraryImport (GlobalMemoryStatusEx) generates pointer-based marshalling code -->
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
   </PropertyGroup>
 
   <ItemGroup>

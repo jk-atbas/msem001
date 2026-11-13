@@ -13,6 +13,7 @@ internal sealed class WatchdogOptionsValidator : IValidateOptions<WatchdogOption
 
         var errors = new List<string>();
         ValidateDisk(options.Disk, errors);
+        ValidateMemory(options.Memory, errors);
         ValidatePodman(options.Podman, errors);
         ValidateScripts(options.Scripts, errors);
         ValidateJenkinsAgent(options.JenkinsAgent, errors);
@@ -40,6 +41,22 @@ internal sealed class WatchdogOptionsValidator : IValidateOptions<WatchdogOption
         RequirePositive(disk.CheckInterval, "Watchdog:Disk:CheckInterval", errors);
         RequireNotNegative(disk.MaintenanceCooldown, "Watchdog:Disk:MaintenanceCooldown", errors);
         RequirePositive(disk.UsageAlertRepeatInterval, "Watchdog:Disk:UsageAlertRepeatInterval", errors);
+    }
+
+    private static void ValidateMemory(MemoryOptions memory, List<string> errors)
+    {
+        if (!memory.Enabled)
+            return;
+
+        if (memory.ErrorUsagePercent is <= 0 or > 100 || memory.CriticalUsagePercent is <= 0 or > 100)
+            errors.Add("Watchdog:Memory:ErrorUsagePercent und CriticalUsagePercent müssen zwischen 0 und 100 liegen.");
+
+        if (memory.CriticalUsagePercent < memory.ErrorUsagePercent)
+            errors.Add("Watchdog:Memory:CriticalUsagePercent muss größer oder gleich ErrorUsagePercent sein.");
+
+        RequirePositive(memory.CheckInterval, "Watchdog:Memory:CheckInterval", errors);
+        RequireNotNegative(memory.SustainedDuration, "Watchdog:Memory:SustainedDuration", errors);
+        RequirePositive(memory.UsageAlertRepeatInterval, "Watchdog:Memory:UsageAlertRepeatInterval", errors);
     }
 
     private static void ValidatePodman(PodmanOptions podman, List<string> errors)

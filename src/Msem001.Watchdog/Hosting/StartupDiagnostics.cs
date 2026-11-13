@@ -39,6 +39,14 @@ internal sealed partial class StartupDiagnostics(
             settings.Mail.Enabled,
             recipients);
 
+        LogMemoryConfiguration(
+            logger,
+            settings.Memory.Enabled,
+            settings.Memory.ErrorUsagePercent,
+            settings.Memory.CriticalUsagePercent,
+            settings.Memory.CheckInterval,
+            settings.Memory.SustainedDuration);
+
         return Task.CompletedTask;
     }
 
@@ -69,6 +77,9 @@ internal sealed partial class StartupDiagnostics(
         bool agentEnabled,
         bool mailEnabled,
         string recipients);
+
+    [LoggerMessage(EventId = 104, Level = LogLevel.Information, Message = "RAM-Überwachung aktiv: {Enabled}, Error > {ErrorPercent} %, Critical > {CriticalPercent} %, Intervall {Interval}, Meldung nach {SustainedDuration} am Stück")]
+    private static partial void LogMemoryConfiguration(ILogger logger, bool enabled, double errorPercent, double criticalPercent, TimeSpan interval, TimeSpan sustainedDuration);
 
     [LoggerMessage(EventId = 103, Level = LogLevel.Information, Message = "MSEM001 Watchdog wird beendet, ein laufender Jenkins-Agent bleibt verbunden")]
     private static partial void LogStopping(ILogger logger);

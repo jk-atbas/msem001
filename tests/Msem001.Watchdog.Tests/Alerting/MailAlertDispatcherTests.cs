@@ -2,6 +2,7 @@ using System.Collections.Concurrent;
 using Msem001.Watchdog.Alerting;
 using Msem001.Watchdog.Configuration;
 using Msem001.Watchdog.Disk;
+using Msem001.Watchdog.Memory;
 using Msem001.Watchdog.Tests.TestSupport;
 
 namespace Msem001.Watchdog.Tests.Alerting;
@@ -117,7 +118,9 @@ public sealed class MailAlertDispatcherTests
         var options = TestData.CreateOptions(configure);
         var disk = Mock.Of<IDiskSpaceProbe>();
         disk.GetDiskSpace().Returns(TestData.Disk(freeGb: 100));
-        var composer = new AlertMailComposer(disk.Object, TestData.CreateEnvironment(), options, TimeProvider.System);
+        var memory = Mock.Of<IMemoryProbe>();
+        memory.GetMemory().Returns(TestData.Memory(usedPercent: 50));
+        var composer = new AlertMailComposer(disk.Object, memory.Object, TestData.CreateEnvironment(), options, TimeProvider.System);
         return new MailAlertDispatcher(queue, sender.Object, composer, options, TimeProvider.System, logger);
     }
 }

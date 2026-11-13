@@ -44,6 +44,7 @@ mit vollem Admin-Token, weil Dienst-Anmeldungen nicht der UAC-Filterung unterlie
 | Prüfung | Intervall | Reaktion |
 |---|---|---|
 | Speicher C: belegt > 90 % / > 95 % | 5 min | Log `Error` / `Critical` und Mail (Wiederholung nach 6 h, Eskalation sofort) |
+| RAM belegt > 90 % / > 95 % (seit v2) | 1 min | wie beim Speicher, aber erst wenn die Schwelle **5 min am Stück** überschritten ist (kurze Spitzen während Builds lösen keinen Alarm aus; `Watchdog:Memory:SustainedDuration`) |
 | Freier Speicher < 50 GB | 5 min (Sperrfrist 2 h) | Agent stoppen, `Clean-JenkinsWorkspace.ps1` |
 | …danach weiterhin < 200 GB | – | `Reset-PodmanMachine.ps1 -Force`, danach sicherstellen, dass die Machine läuft (sonst `podman machine start`) |
 | Nightly-Vorabprüfung | täglich 20:45 (Nightly um 22:00) | wie oben, ohne Sperrfrist |
@@ -60,7 +61,8 @@ Alle Werte sind in `appsettings.json` (Abschnitt `Watchdog`) konfigurierbar.
 * Logs: `%ProgramData%\Msem001Watchdog\logs\watchdog-YYYYMMDD.log` (Text) und `.clef` (strukturiertes JSON,
   z.B. mit [Seq](https://datalust.co/seq) oder `clef-tool` auswertbar), 60 Tage Aufbewahrung.
 * Jedes Log-Ereignis mit Level `Error`/`Critical` wird per Mail verschickt (Mailjet, Port 587, STARTTLS).
-  Ereignisse innerhalb von 30 s werden zu einer Mail gebündelt. Jede Mail enthält den aktuellen freien Speicherplatz.
+  Ereignisse innerhalb von 30 s werden zu einer Mail gebündelt. Jede Mail enthält den aktuellen freien
+  Speicherplatz und die aktuelle RAM-Auslastung in Prozent (im Text und kurz im Betreff, z.B. `| 42.5 GB frei | RAM 63.5 %`).
 * Empfänger ohne `@` bekommen automatisch `@atbas.de` angehängt.
 
 ### Build, Tests, Coverage

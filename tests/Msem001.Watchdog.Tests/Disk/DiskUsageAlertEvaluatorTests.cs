@@ -1,6 +1,6 @@
 using Microsoft.Extensions.Time.Testing;
-using Msem001.Watchdog.Configuration;
 using Msem001.Watchdog.Disk;
+using Msem001.Watchdog.Monitoring;
 using Msem001.Watchdog.Tests.TestSupport;
 
 namespace Msem001.Watchdog.Tests.Disk;
@@ -17,20 +17,20 @@ public sealed class DiskUsageAlertEvaluatorTests
     }
 
     [Test]
-    [Arguments(50, (int)DiskUsageLevel.Normal)]
-    [Arguments(90, (int)DiskUsageLevel.Normal)]
-    [Arguments(90.1, (int)DiskUsageLevel.High)]
-    [Arguments(95, (int)DiskUsageLevel.High)]
-    [Arguments(95.1, (int)DiskUsageLevel.Critical)]
-    public async Task Classify_UsesStrictThresholds(double usedPercent, int expected)
+    [Arguments(90, (int)UsageLevel.Normal)]
+    [Arguments(90.1, (int)UsageLevel.High)]
+    [Arguments(95.1, (int)UsageLevel.Critical)]
+    public async Task Evaluate_UsesConfiguredStrictThresholds(double usedPercent, int expected)
     {
-        await Assert.That(DiskUsageAlertEvaluator.Classify(usedPercent, new DiskOptions())).IsEqualTo((DiskUsageLevel)expected);
+        var disk = new DiskSpaceInfo(@"C:\", 1000, (long)Math.Round(1000 * (100 - usedPercent) / 100));
+
+        await Assert.That(evaluator.Evaluate(disk)).IsEqualTo((UsageLevel)expected);
     }
 
     [Test]
     public async Task Evaluate_NormalUsage_LogsNothingRelevant()
     {
-        await Assert.That(evaluator.Evaluate(TestData.Disk(freeGb: 500))).IsEqualTo(DiskUsageLevel.Normal);
+        await Assert.That(evaluator.Evaluate(TestData.Disk(freeGb: 500))).IsEqualTo(UsageLevel.Normal);
 
         await Assert.That(logger.CountAtLeast(LogLevel.Warning)).IsEqualTo(0);
     }
@@ -38,7 +38,7 @@ public sealed class DiskUsageAlertEvaluatorTests
     [Test]
     public async Task Evaluate_Above90Percent_LogsErrorWithFreeSpace()
     {
-        await Assert.That(evaluator.Evaluate(TestData.Disk(freeGb: 80))).IsEqualTo(DiskUsageLevel.High);
+        await Assert.That(evaluator.Evaluate(TestData.Disk(freeGb: 80))).IsEqualTo(UsageLevel.High);
 
         logger.VerifyLog().AtLevel(LogLevel.Error).ContainingMessage("92.0 %").WasCalled(Times.Once);
         await Assert.That(logger.Latest().Message).Contains("80.0 GB frei");
@@ -47,7 +47,7 @@ public sealed class DiskUsageAlertEvaluatorTests
     [Test]
     public async Task Evaluate_Above95Percent_LogsCritical()
     {
-        await Assert.That(evaluator.Evaluate(TestData.Disk(freeGb: 30))).IsEqualTo(DiskUsageLevel.Critical);
+        await Assert.That(evaluator.Evaluate(TestData.Disk(freeGb: 30))).IsEqualTo(UsageLevel.Critical);
 
         logger.VerifyLog().AtLevel(LogLevel.Critical).ContainingMessage("30.0 GB frei").WasCalled(Times.Once);
     }
@@ -84,7 +84,7 @@ public sealed class DiskUsageAlertEvaluatorTests
         evaluator.Evaluate(TestData.Disk(freeGb: 40));
         time.Advance(TimeSpan.FromMinutes(5));
 
-        await Assert.That(evaluator.Evaluate(TestData.Disk(freeGb: 80))).IsEqualTo(DiskUsageLevel.High);
+        await Assert.That(evaluator.Evaluate(TestData.Disk(freeGb: 80))).IsEqualTo(UsageLevel.High);
 
         await Assert.That(logger.CountAtLeast(LogLevel.Error)).IsEqualTo(1);
         await Assert.That(logger.Latest().LogLevel).IsEqualTo(LogLevel.Information);
