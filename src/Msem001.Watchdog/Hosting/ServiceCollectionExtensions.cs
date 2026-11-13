@@ -37,6 +37,7 @@ internal static class ServiceCollectionExtensions
         // Infrastructure
         services.AddSingleton<IDiskSpaceProbe, DriveInfoDiskSpaceProbe>();
         services.AddSingleton<IMemoryProbe, WindowsMemoryProbe>();
+        services.AddSingleton<IProcessTokenInspector, WindowsProcessTokenInspector>();
         services.AddSingleton<IProcessRunner, ProcessRunner>();
         services.AddSingleton<ISystemProcesses, SystemProcesses>();
         services.AddSingleton<IMaintenanceScripts, PowerShellMaintenanceScripts>();

@@ -28,7 +28,7 @@ Versionen: v1 = Commit `44fecc3`, v2 = `e008ecf` (RAM-Prüfung). Aktuelle `<Vers
 | F4 | win-sshproxy/Docker-API zyklisch prüfen, bei Defekt Reset | `BuildAgentHealthWorker` → `BuildAgentHealthMonitor` → `PodmanHealthChecker` (`/_ping` über Named Pipe). Machine gestoppt → starten. Proxy tot (2× in Folge) → Reset. Reset fehlgeschlagen → `Critical`, neuer Versuch nach 30 min |
 | F5 | Vor **jeder** Skript-Routine Jenkins-Agent stoppen, danach wieder verbinden – auch wenn das Skript fehlschlägt | `MaintenanceExecutor` (exklusiv per Semaphore): Agent stoppen → Skript(e) → Podman prüfen → Agent starten |
 | F6 | Agent-Start: `java -jar agent.jar -url <url> -secret <secret> -name "einarbeitungs-laptop" -webSocket -workDir "C:\jenkins"`; der Agent muss als Admin laufen | `JenkinsAgentController`. Der Agent erbt das Dienstkonto. Laufende Agents werden per WMI-Kommandozeile erkannt, damit kein zweiter gestartet wird |
-| F7 | Dienstkonto `MSEM001\atbas` (lokaler Admin) | `deploy\Install-WatchdogService.ps1`. `StartupDiagnostics` loggt `Error`, wenn der Prozess nicht elevated läuft |
+| F7 | Dienstkonto `MSEM001\atbas` (lokaler Admin) | `deploy\Install-WatchdogService.ps1`. `StartupDiagnostics` prüft das Token (`IProcessTokenInspector`): Administratorgruppe aktiv **und** Integritätsstufe ≥ High. Sonst `Error` mit Ursache und Abhilfe (UAC-gefiltert, kein Mitglied, Administratorschutz) |
 | F8 | Ausführliches, strukturiertes Logging | Serilog: Konsole + Text + CLEF unter `%ProgramData%\Msem001Watchdog\logs`. **Alle** Logs über `[LoggerMessage]`-Source-Generator mit fester EventId |
 | F9 | Mail bei jedem `Error`/`Critical` an eine konfigurierbare Empfängerliste | `MailAlertLoggerProvider` → `AlertQueue` → `MailAlertDispatcher` (30 s Bündelung, Retry) → `MailKitMailSender`. SMTP `in-v3.mailjet.com:587` STARTTLS. Empfänger ohne `@` erhalten `@atbas.de` |
 | F10 | Disk belegt > 90 % → `Error`, > 95 % → `Critical` (jeweils mit Mail) | `DiskUsageAlertEvaluator` + `UsageAlertTracker`: Eskalation sofort, Wiederholung nach 6 h, Entwarnung als `Information` |
@@ -96,7 +96,7 @@ Aufrufe zum Build-Fehler (RS0030):
 Ein Paket für `Process` gibt es nicht: `System.Diagnostics.Abstractions` ist veraltet und kennt die
 moderne API nicht. `#pragma warning disable RS0030` ist **nur** in `ProcessFactory` und `Program.cs`
 erlaubt. Die dünnen Adapter (`ProcessFactory`, `WmiProcessQuery`, `NamedPipeDockerApiProbe`,
-`WindowsMemoryProbe`) werden durch Tests der Kategorie `Integration` abgedeckt. Systemabstraktionen werden in `AddWatchdog` per `TryAdd`
+`WindowsMemoryProbe`, `WindowsProcessTokenInspector`) werden durch Tests der Kategorie `Integration` abgedeckt. Systemabstraktionen werden in `AddWatchdog` per `TryAdd`
 registriert, damit Tests eigene Instanzen vorgeben können.
 
 ### Komponenten (Ordner unter `src/Msem001.Watchdog`)
@@ -132,7 +132,7 @@ BuildAgentHealthWorker, DiskMonitorWorker, MemoryMonitorWorker, NightlyPreCheckW
 
   | Bereich | Klasse | Bereich | Klasse |
   |---|---|---|---|
-  | 100–104 | StartupDiagnostics | 7000 | DiskMaintenanceWorkflow |
+  | 100–106 | StartupDiagnostics | 7000 | DiskMaintenanceWorkflow |
   | 1100 | DiskUsageAlertEvaluator | 8000 | BuildAgentHealthMonitor |
   | 1200 | MemoryUsageAlertEvaluator | 9000 | MailAlertDispatcher |
   | 2000 | ProcessRunner | 10000 | DiskMonitorWorker |
@@ -152,6 +152,11 @@ BuildAgentHealthWorker, DiskMonitorWorker, MemoryMonitorWorker, NightlyPreCheckW
 * Testably definiert ebenfalls einen `TimeProvider`. Deshalb gibt es im Testprojekt den globalen Alias
   `System.TimeProvider`.
 * `<see cref="Process"/>` in XML-Doku gilt als Verwendung der gebannten API → `<c>Process</c>` schreiben.
+* **Admin-Prüfung nicht über `IsPrivilegedProcess`.** `Environment.IsPrivilegedProcess` (= `TokenIsElevated`) ist für
+  einen Dienst unter einem Admin-Konto `false`, weil es ohne UAC-Tokenpaar kein „elevated“-Token gibt. Das Token
+  hat trotzdem volle Rechte (auf MSEM001 am 13.11.2026 beobachtet: Elevation `Default`, Administratorgruppe
+  `Enabled`). Maßgeblich ist `ProcessTokenInfo.HasAdministratorRights`. `IsPrivilegedProcess` dient nur als
+  Fallback, wenn die Token-Untersuchung fehlschlägt.
 * `Environment.NewLine` ist bereits vom EnvironmentAbstractions-Analyzer gebannt; ein zweiter Eintrag in
   `BannedSymbols.txt` führt zu RS0031.
 * Mit .NET 10+ wird VSTest nicht mehr unterstützt. `global.json` setzt den Runner auf

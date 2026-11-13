@@ -4,24 +4,21 @@ using Msem001.Watchdog.Configuration;
 namespace Msem001.Watchdog.Hosting;
 
 /// <summary>
-/// Logs account, elevation and the effective configuration on start.
-/// The Jenkins agent inherits the account of the service, so a missing elevation is reported as error.
+/// Logs account, administrator rights and the effective configuration on start.
+/// The Jenkins agent inherits the token of the service, so missing administrator rights are reported as error.
 /// </summary>
 internal sealed partial class StartupDiagnostics(
     IOptions<WatchdogOptions> options,
     IEnvironmentProvider environment,
+    IProcessTokenInspector tokenInspector,
     ILogger<StartupDiagnostics> logger) : IHostedService
 {
     public Task StartAsync(CancellationToken cancellationToken)
     {
         var settings = options.Value;
         var account = $"{environment.UserDomainName}\\{environment.UserName}";
-        var elevated = environment.IsPrivilegedProcess;
-
         var version = typeof(StartupDiagnostics).Assembly.GetName().Version?.ToString() ?? "?";
-        LogIdentity(logger, account, elevated, environment.MachineName, version);
-        if (!elevated)
-            LogNotElevated(logger, account);
+        CheckAdministratorRights(account, version);
 
         var recipients = string.Join(", ", settings.Mail.Recipients);
         LogConfiguration(
@@ -56,11 +53,17 @@ internal sealed partial class StartupDiagnostics(
         return Task.CompletedTask;
     }
 
-    [LoggerMessage(EventId = 100, Level = LogLevel.Information, Message = "MSEM001 Watchdog {Version} startet auf {MachineName} als {Account} (Administrator/elevated: {Elevated})")]
+    [LoggerMessage(EventId = 100, Level = LogLevel.Information, Message = "MSEM001 Watchdog {Version} startet auf {MachineName} als {Account} (Administratorrechte: {Elevated})")]
     private static partial void LogIdentity(ILogger logger, string account, bool elevated, string machineName, string version);
 
-    [LoggerMessage(EventId = 101, Level = LogLevel.Error, Message = "Der Dienst läuft als {Account} ohne Administratorrechte. Der Jenkins-Agent erbt diese Rechte, Tests mit Admin-Voraussetzung schlagen fehl")]
-    private static partial void LogNotElevated(ILogger logger, string account);
+    [LoggerMessage(EventId = 106, Level = LogLevel.Information, Message = "Prozess-Token: Elevation {ElevationType}, Administratorgruppe {AdministratorsGroup}, Integritätsstufe {IntegrityLevel}, TypeOfAdminApprovalMode {AdminApprovalMode}")]
+    private static partial void LogToken(ILogger logger, TokenElevationKind elevationType, AdministratorsGroupState administratorsGroup, string integrityLevel, int? adminApprovalMode);
+
+    [LoggerMessage(EventId = 101, Level = LogLevel.Error, Message = "Der Dienst läuft als {Account} ohne Administratorrechte. Der Jenkins-Agent erbt diese Rechte, Tests mit Admin-Voraussetzung schlagen fehl. Ursache: {Diagnosis}")]
+    private static partial void LogNotElevated(ILogger logger, string account, string diagnosis);
+
+    [LoggerMessage(EventId = 105, Level = LogLevel.Error, Message = "Der Dienst läuft als {Account} ohne Administratorrechte. Der Jenkins-Agent erbt diese Rechte, Tests mit Admin-Voraussetzung schlagen fehl. Das Token konnte nicht untersucht werden")]
+    private static partial void LogNotElevatedUnknownCause(ILogger logger, string account, Exception exception);
 
     [LoggerMessage(EventId = 102, Level = LogLevel.Information, Message = "Konfiguration: Laufwerk {Drive}, Bereinigung < {CleanupThresholdGb} GB, Podman-Reset < {ResetThresholdGb} GB, Error > {ErrorPercent} %, Critical > {CriticalPercent} %, Nightly-Vorabprüfung {NightlyTime}, Podman-Machine {MachineName}, Pipe {PipeName}, Agent {AgentName} (verwaltet: {AgentEnabled}), Mail aktiv: {MailEnabled}, Empfänger: {Recipients}")]
     private static partial void LogConfiguration(
@@ -83,4 +86,28 @@ internal sealed partial class StartupDiagnostics(
 
     [LoggerMessage(EventId = 103, Level = LogLevel.Information, Message = "MSEM001 Watchdog wird beendet, ein laufender Jenkins-Agent bleibt verbunden")]
     private static partial void LogStopping(ILogger logger);
+
+    private void CheckAdministratorRights(string account, string version)
+    {
+        ProcessTokenInfo token;
+        try
+        {
+            token = tokenInspector.Inspect();
+        }
+        catch (Exception ex) when (ex is System.ComponentModel.Win32Exception or System.Security.SecurityException or UnauthorizedAccessException)
+        {
+            // Fallback: TokenIsElevated is stricter than necessary (false for services without a split token), but better than nothing.
+            var elevated = environment.IsPrivilegedProcess;
+            LogIdentity(logger, account, elevated, environment.MachineName, version);
+            if (!elevated)
+                LogNotElevatedUnknownCause(logger, account, ex);
+            return;
+        }
+
+        var hasRights = token.HasAdministratorRights;
+        LogIdentity(logger, account, hasRights, environment.MachineName, version);
+        LogToken(logger, token.ElevationType, token.AdministratorsGroup, token.IntegrityLevelName, token.AdminApprovalMode);
+        if (!hasRights)
+            LogNotElevated(logger, account, token.Explain());
+    }
 }

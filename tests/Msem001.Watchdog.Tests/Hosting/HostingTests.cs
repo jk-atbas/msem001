@@ -59,6 +59,7 @@ public sealed class HostingTests
         await Assert.That(provider.GetRequiredService<IProcessFactory>()).IsTypeOf<ProcessFactory>();
         await Assert.That(provider.GetRequiredService<IProcessQuery>()).IsTypeOf<WmiProcessQuery>();
         await Assert.That(provider.GetRequiredService<IMemoryProbe>()).IsTypeOf<WindowsMemoryProbe>();
+        await Assert.That(provider.GetRequiredService<IProcessTokenInspector>()).IsTypeOf<WindowsProcessTokenInspector>();
     }
 
     [Test]
@@ -101,13 +102,14 @@ public sealed class HostingTests
         environment.MachineName.Returns("MSEM001");
         environment.UserDomainName.Returns("MSEM001");
         environment.UserName.Returns("atbas");
-        environment.IsPrivilegedProcess.Returns(true);
-        var diagnostics = new StartupDiagnostics(TestData.CreateOptions(), environment.Object, logger);
+        var tokenInspector = Inspector(new ProcessTokenInfo(TokenElevationKind.Full, AdministratorsGroupState.Enabled, 1, ProcessTokenInfo.HighIntegrity));
+        var diagnostics = new StartupDiagnostics(TestData.CreateOptions(), environment.Object, tokenInspector, logger);
 
         await diagnostics.StartAsync(TestData.Ct);
         await diagnostics.StopAsync(TestData.Ct);
 
-        logger.VerifyLog().AtLevel(LogLevel.Information).ContainingMessage(@"auf MSEM001 als MSEM001\atbas (Administrator/elevated: True)").WasCalled(Times.Once);
+        logger.VerifyLog().AtLevel(LogLevel.Information).ContainingMessage(@"auf MSEM001 als MSEM001\atbas (Administratorrechte: True)").WasCalled(Times.Once);
+        logger.VerifyLog().AtLevel(LogLevel.Information).ContainingMessage("Elevation Full, Administratorgruppe Enabled, Integritätsstufe High").WasCalled(Times.Once);
         logger.VerifyLog().AtLevel(LogLevel.Information).ContainingMessage("Bereinigung < 50 GB").WasCalled(Times.Once);
         logger.VerifyLog().AtLevel(LogLevel.Information).ContainingMessage("RAM-Überwachung aktiv: True, Error > 90 %, Critical > 95 %").WasCalled(Times.Once);
         logger.VerifyLog().AtLevel(LogLevel.Information).ContainingMessage("beendet").WasCalled(Times.Once);
@@ -115,16 +117,63 @@ public sealed class HostingTests
     }
 
     [Test]
-    public async Task StartupDiagnostics_NotElevated_LogsError()
+    public async Task StartupDiagnostics_ServiceTokenWithoutElevationFlag_IsAdministrator()
+    {
+        // Situation on MSEM001: service logon, no UAC split token, TokenIsElevated = false.
+        var logger = Mock.Logger<StartupDiagnostics>();
+        var tokenInspector = Inspector(new ProcessTokenInfo(TokenElevationKind.Default, AdministratorsGroupState.Enabled, 1, ProcessTokenInfo.HighIntegrity));
+
+        await new StartupDiagnostics(TestData.CreateOptions(), NotElevatedEnvironment(), tokenInspector, logger).StartAsync(TestData.Ct);
+
+        logger.VerifyLog().AtLevel(LogLevel.Information).ContainingMessage("(Administratorrechte: True)").WasCalled(Times.Once);
+        logger.VerifyNoLog(LogLevel.Error);
+    }
+
+    [Test]
+    public async Task StartupDiagnostics_NoAdministratorRights_LogsErrorWithDiagnosis()
     {
         var logger = Mock.Logger<StartupDiagnostics>();
+        var tokenInspector = Inspector(new ProcessTokenInfo(TokenElevationKind.Default, AdministratorsGroupState.Missing, ProcessTokenInfo.AdministratorProtectionMode, 0x2000));
+
+        await new StartupDiagnostics(TestData.CreateOptions(), NotElevatedEnvironment(), tokenInspector, logger).StartAsync(TestData.Ct);
+
+        logger.VerifyLog().AtLevel(LogLevel.Information).ContainingMessage("Elevation Default, Administratorgruppe Missing, Integritätsstufe Medium, TypeOfAdminApprovalMode 2").WasCalled(Times.Once);
+        logger.VerifyLog().AtLevel(LogLevel.Error).ContainingMessage("ohne Administratorrechte").WasCalled(Times.Once);
+        logger.VerifyLog().AtLevel(LogLevel.Error).ContainingMessage("Windows-Administratorschutz ist aktiv").WasCalled(Times.Once);
+    }
+
+    [Test]
+    [Arguments(false, 1)]
+    [Arguments(true, 0)]
+    public async Task StartupDiagnostics_InspectionFails_FallsBackToEnvironment(bool privileged, int expectedErrors)
+    {
+        var logger = Mock.Logger<StartupDiagnostics>();
+        var tokenInspector = Mock.Of<IProcessTokenInspector>();
+        tokenInspector.Inspect().Throws(new UnauthorizedAccessException("Registry"));
+        var environment = Mock.Of<IEnvironmentProvider>();
+        environment.UserDomainName.Returns("MSEM001");
+        environment.UserName.Returns("atbas");
+        environment.IsPrivilegedProcess.Returns(privileged);
+
+        await new StartupDiagnostics(TestData.CreateOptions(), environment.Object, tokenInspector.Object, logger).StartAsync(TestData.Ct);
+
+        logger.VerifyLog().AtLevel(LogLevel.Information).ContainingMessage($"(Administratorrechte: {privileged})").WasCalled(Times.Once);
+        logger.VerifyLog().AtLevel(LogLevel.Error).ContainingMessage("konnte nicht untersucht werden").WithException<UnauthorizedAccessException>().WasCalled(Times.Exactly(expectedErrors));
+    }
+
+    private static IProcessTokenInspector Inspector(ProcessTokenInfo info)
+    {
+        var inspector = Mock.Of<IProcessTokenInspector>();
+        inspector.Inspect().Returns(info);
+        return inspector.Object;
+    }
+
+    private static IEnvironmentProvider NotElevatedEnvironment()
+    {
         var environment = Mock.Of<IEnvironmentProvider>();
         environment.UserDomainName.Returns("MSEM001");
         environment.UserName.Returns("atbas");
         environment.IsPrivilegedProcess.Returns(false);
-
-        await new StartupDiagnostics(TestData.CreateOptions(), environment.Object, logger).StartAsync(TestData.Ct);
-
-        logger.VerifyLog().AtLevel(LogLevel.Error).ContainingMessage("ohne Administratorrechte").WasCalled(Times.Once);
+        return environment.Object;
     }
 }
