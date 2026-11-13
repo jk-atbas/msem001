@@ -6,6 +6,7 @@ using Microsoft.Extensions.Options;
 using Msem001.Watchdog.Alerting;
 using Msem001.Watchdog.Configuration;
 using Msem001.Watchdog.Hosting;
+using Msem001.Watchdog.Jenkins;
 using Msem001.Watchdog.Memory;
 using Msem001.Watchdog.Processes;
 using Msem001.Watchdog.Processes.Abstractions;
@@ -60,6 +61,11 @@ public sealed class HostingTests
         await Assert.That(provider.GetRequiredService<IProcessQuery>()).IsTypeOf<WmiProcessQuery>();
         await Assert.That(provider.GetRequiredService<IMemoryProbe>()).IsTypeOf<WindowsMemoryProbe>();
         await Assert.That(provider.GetRequiredService<IProcessTokenInspector>()).IsTypeOf<WindowsProcessTokenInspector>();
+        await Assert.That(provider.GetRequiredService<IJenkinsApi>()).IsTypeOf<JenkinsApiClient>();
+        await Assert.That(provider.GetRequiredService<IJenkinsAgentDrain>()).IsTypeOf<JenkinsAgentDrain>();
+        await Assert.That(options.Disk.ImmediateMaintenanceThresholdGb).IsEqualTo(10);
+        await Assert.That(options.JenkinsAgent.DrainTimeout).IsEqualTo(TimeSpan.FromHours(1));
+        await Assert.That(options.JenkinsAgent.IsApiConfigured).IsFalse();
     }
 
     [Test]
@@ -112,8 +118,35 @@ public sealed class HostingTests
         logger.VerifyLog().AtLevel(LogLevel.Information).ContainingMessage("Elevation Full, Administratorgruppe Enabled, Integritätsstufe High").WasCalled(Times.Once);
         logger.VerifyLog().AtLevel(LogLevel.Information).ContainingMessage("Bereinigung < 50 GB").WasCalled(Times.Once);
         logger.VerifyLog().AtLevel(LogLevel.Information).ContainingMessage("RAM-Überwachung aktiv: True, Error > 90 %, Critical > 95 %").WasCalled(Times.Once);
+        logger.VerifyLog().AtLevel(LogLevel.Warning).ContainingMessage("Sanfte Wartung inaktiv").WasCalled(Times.Once);
         logger.VerifyLog().AtLevel(LogLevel.Information).ContainingMessage("beendet").WasCalled(Times.Once);
         logger.VerifyNoLog(LogLevel.Error);
+    }
+
+    [Test]
+    [Arguments(true, true, "Sanfte Wartung aktiv (Jenkins-API als watchdog)")]
+    [Arguments(true, false, "Sanfte Wartung inaktiv")]
+    [Arguments(false, false, null)]
+    public async Task StartupDiagnostics_LogsGracefulMaintenanceState(bool agentEnabled, bool apiConfigured, string? expected)
+    {
+        var logger = Mock.Logger<StartupDiagnostics>();
+        var options = TestData.CreateOptions(o =>
+        {
+            o.JenkinsAgent.Enabled = agentEnabled;
+            if (apiConfigured)
+            {
+                o.JenkinsAgent.ApiUser = "watchdog";
+                o.JenkinsAgent.ApiToken = "t0ken";
+            }
+        });
+        var tokenInspector = Inspector(new ProcessTokenInfo(TokenElevationKind.Full, AdministratorsGroupState.Enabled, 1, ProcessTokenInfo.HighIntegrity));
+
+        await new StartupDiagnostics(options, NotElevatedEnvironment(), tokenInspector, logger).StartAsync(TestData.Ct);
+
+        if (expected is null)
+            logger.VerifyLog().ContainingMessage("Sanfte Wartung").WasNeverCalled();
+        else
+            logger.VerifyLog().ContainingMessage(expected).WasCalled(Times.Once);
     }
 
     [Test]

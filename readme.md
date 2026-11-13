@@ -54,6 +54,23 @@ mit vollem Admin-Token, weil Dienst-Anmeldungen nicht der UAC-Filterung unterlie
 Jede Wartungsroutine läuft exklusiv: Agent beenden → Skript(e) → Podman prüfen → Agent neu verbinden.
 Der Agent wird auch dann neu gestartet, wenn ein Skript fehlschlägt.
 
+**Sanfte Wartung (empfohlen):** Mit einem Jenkins-API-Token (`Watchdog:JenkinsAgent:ApiUser`/`ApiToken`)
+bricht eine Wartung laufende Builds nicht mehr ab:
+
+1. Der Agent wird in Jenkins *vorübergehend offline* geschaltet (Grund „[MSEM001 Watchdog] Wartung …“), es starten
+   keine neuen Builds.
+2. Der Dienst wartet, bis kein Build mehr läuft, höchstens `DrainTimeout` (1 h), Abfrage alle 30 s.
+3. Erst dann wird der Agent beendet und die Wartung ausgeführt.
+4. Danach startet der Agent neu und wird in Jenkins wieder online geschaltet.
+
+Sinkt der freie Speicher unter `Watchdog:Disk:ImmediateMaintenanceThresholdGb` (10 GB), wird nicht (weiter) gewartet.
+Hat eine Person den Agent offline geschaltet, wird gewartet, der Agent bleibt danach aber offline. Bleibt der
+Watchdog-Offline-Status hängen (Absturz, Jenkins nicht erreichbar), schaltet die Agent-Überwachung ihn später wieder
+online. Ohne Token wird der Agent wie bisher sofort beendet (Warnung im Startlog).
+
+Token anlegen: in Jenkins als Benutzer mit dem Recht *Agent → Disconnect* (z.B. Admin) anmelden → Benutzer →
+Security → API Token → „Add new Token“. Benutzer und Token in `appsettings.Local.json` eintragen.
+
 Alle Werte sind in `appsettings.json` (Abschnitt `Watchdog`) konfigurierbar.
 
 ### Logging und Mails
@@ -106,8 +123,8 @@ dotnet test --solution Msem001.Watchdog.slnx --coverage --coverage-settings cove
 ```
 
 Beim ersten Mal wird `C:\Services\Msem001Watchdog\appsettings.Local.json` aus der Vorlage angelegt
-(nicht im Git, nur für Admins lesbar). Dort Jenkins-Secret, Mailjet-API-Key/-Secret und Empfänger
-eintragen, danach `Restart-Service Msem001Watchdog`. Ohne Secret und Empfänger startet der Dienst
+(nicht im Git, nur für Admins lesbar). Dort Jenkins-Secret, Jenkins-API-Benutzer/-Token (sanfte Wartung),
+Mailjet-API-Key/-Secret und Empfänger eintragen, danach `Restart-Service Msem001Watchdog`. Ohne Secret und Empfänger startet der Dienst
 bewusst nicht (Konfigurationsvalidierung).
 
 Der Dienst startet „Automatisch (verzögert)“ und wird bei Absturz nach 1/1/5 Minuten neu gestartet.

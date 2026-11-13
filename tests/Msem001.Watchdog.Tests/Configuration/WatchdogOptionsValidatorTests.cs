@@ -16,6 +16,13 @@ public sealed class WatchdogOptionsValidatorTests
         yield return () => ("CriticalUsagePercent", o => o.Disk.CriticalUsagePercent = 80);
         yield return () => ("Disk:CheckInterval", o => o.Disk.CheckInterval = TimeSpan.Zero);
         yield return () => ("MaintenanceCooldown", o => o.Disk.MaintenanceCooldown = TimeSpan.FromSeconds(-1));
+        yield return () => ("ImmediateMaintenanceThresholdGb", o => o.Disk.ImmediateMaintenanceThresholdGb = -1);
+        yield return () => ("ImmediateMaintenanceThresholdGb", o => o.Disk.ImmediateMaintenanceThresholdGb = 60);
+        yield return () => ("ApiUser und ApiToken", o => o.JenkinsAgent.ApiUser = "watchdog");
+        yield return () => ("ApiUser und ApiToken", o => o.JenkinsAgent.ApiToken = "t0ken");
+        yield return () => ("ApiTimeout", o => o.JenkinsAgent.ApiTimeout = TimeSpan.Zero);
+        yield return () => ("DrainTimeout", o => o.JenkinsAgent.DrainTimeout = TimeSpan.FromSeconds(-1));
+        yield return () => ("DrainPollInterval", o => o.JenkinsAgent.DrainPollInterval = TimeSpan.Zero);
         yield return () => ("Memory:ErrorUsagePercent", o => o.Memory.ErrorUsagePercent = 0);
         yield return () => ("Memory:CriticalUsagePercent", o => o.Memory.CriticalUsagePercent = 85);
         yield return () => ("Memory:CheckInterval", o => o.Memory.CheckInterval = TimeSpan.Zero);
@@ -38,6 +45,18 @@ public sealed class WatchdogOptionsValidatorTests
     public async Task Validate_ValidOptions_Succeeds()
     {
         var result = validator.Validate(null, TestData.CreateOptionsValue());
+
+        await Assert.That(result.Succeeded).IsTrue();
+    }
+
+    [Test]
+    public async Task Validate_ApiCredentialsTogether_Succeeds()
+    {
+        var result = validator.Validate(null, TestData.CreateOptionsValue(o =>
+        {
+            o.JenkinsAgent.ApiUser = "watchdog";
+            o.JenkinsAgent.ApiToken = "t0ken";
+        }));
 
         await Assert.That(result.Succeeded).IsTrue();
     }

@@ -34,4 +34,25 @@ public sealed class JenkinsAgentOptions
 
     /// <summary>Time after the start in which an immediate exit of the agent is detected.</summary>
     public TimeSpan StartupGracePeriod { get; set; } = TimeSpan.FromSeconds(15);
+
+    /// <summary>
+    /// Jenkins user for the REST API (needs Agent/Disconnect). Together with <see cref="ApiToken"/> it enables the graceful
+    /// maintenance: the node is marked temporarily offline and running builds may finish. Empty = agent is stopped immediately.
+    /// </summary>
+    public string ApiUser { get; set; } = string.Empty;
+
+    /// <summary>API token of <see cref="ApiUser"/>. Must not be committed, set it in <c>appsettings.Local.json</c>.</summary>
+    public string ApiToken { get; set; } = string.Empty;
+
+    /// <summary>Timeout of a single REST API request.</summary>
+    public TimeSpan ApiTimeout { get; set; } = TimeSpan.FromSeconds(15);
+
+    /// <summary>Maximum time a maintenance waits for running builds before the agent is stopped anyway. 0 = do not wait.</summary>
+    public TimeSpan DrainTimeout { get; set; } = TimeSpan.FromHours(1);
+
+    /// <summary>Interval for polling whether the node is idle while waiting.</summary>
+    public TimeSpan DrainPollInterval { get; set; } = TimeSpan.FromSeconds(30);
+
+    /// <summary>Gets a value indicating whether the REST API credentials are configured.</summary>
+    public bool IsApiConfigured => !string.IsNullOrWhiteSpace(ApiUser) && !string.IsNullOrWhiteSpace(ApiToken);
 }

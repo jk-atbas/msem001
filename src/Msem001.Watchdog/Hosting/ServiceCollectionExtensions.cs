@@ -45,6 +45,8 @@ internal static class ServiceCollectionExtensions
         services.AddSingleton<IDockerApiProbe, NamedPipeDockerApiProbe>();
         services.AddSingleton<IPodmanHealthChecker, PodmanHealthChecker>();
         services.AddSingleton<IJenkinsAgent, JenkinsAgentController>();
+        services.AddSingleton<IJenkinsApi, JenkinsApiClient>();
+        services.AddSingleton<IJenkinsAgentDrain, JenkinsAgentDrain>();
 
         // Workflows
         services.AddSingleton<DiskUsageAlertEvaluator>();

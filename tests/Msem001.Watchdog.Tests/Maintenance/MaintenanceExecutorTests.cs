@@ -7,6 +7,7 @@ namespace Msem001.Watchdog.Tests.Maintenance;
 public sealed class MaintenanceExecutorTests : IDisposable
 {
     private readonly Mock<IJenkinsAgent> agent = Mock.Of<IJenkinsAgent>();
+    private readonly Mock<IJenkinsAgentDrain> drain = Mock.Of<IJenkinsAgentDrain>();
     private readonly MockLogger<MaintenanceExecutor> logger = Mock.Logger<MaintenanceExecutor>();
     private readonly List<string> calls = [];
     private readonly MaintenanceExecutor executor;
@@ -15,7 +16,9 @@ public sealed class MaintenanceExecutorTests : IDisposable
     {
         agent.StopAsync(Arg.Any<CancellationToken>()).Callback(() => calls.Add("stop"));
         agent.StartAsync(Arg.Any<CancellationToken>()).Callback(() => calls.Add("start"));
-        executor = new MaintenanceExecutor(agent.Object, logger);
+        drain.DrainAsync(Arg.Any<string>(), Arg.Any<Func<bool>?>(), Arg.Any<CancellationToken>()).Returns(true).Callback(() => calls.Add("drain"));
+        drain.RestoreAsync(Arg.Any<bool>(), Arg.Any<CancellationToken>()).Callback((marked, _) => calls.Add($"restore({marked})"));
+        executor = new MaintenanceExecutor(agent.Object, drain.Object, logger);
     }
 
     public void Dispose() => executor.Dispose();
@@ -33,7 +36,48 @@ public sealed class MaintenanceExecutorTests : IDisposable
             TestData.Ct);
 
         await Assert.That(result).IsEqualTo(42);
-        await Assert.That(string.Join(" > ", calls)).IsEqualTo("stop > routine > start");
+        await Assert.That(string.Join(" > ", calls)).IsEqualTo("drain > stop > routine > start > restore(True)");
+    }
+
+    [Test]
+    public async Task RunWithAgentStoppedAsync_PassesNameAndUrgencyToDrain()
+    {
+        Func<bool> isUrgent = () => true;
+
+        await executor.RunWithAgentStoppedAsync("Speicher", _ => Task.FromResult(1), isUrgent, TestData.Ct);
+
+        drain.DrainAsync("Speicher", isUrgent, Arg.Any<CancellationToken>()).WasCalled(Times.Once);
+    }
+
+    [Test]
+    public async Task RunWithAgentStoppedAsync_NotMarkedOffline_RestoreGetsFalse()
+    {
+        drain.DrainAsync(Arg.Any<string>(), Arg.Any<Func<bool>?>(), Arg.Any<CancellationToken>()).Returns(false);
+
+        await executor.RunWithAgentStoppedAsync("Test", _ => Task.FromResult(1), TestData.Ct);
+
+        drain.RestoreAsync(false, Arg.Any<CancellationToken>()).WasCalled(Times.Once);
+    }
+
+    [Test]
+    public async Task RunWithAgentStoppedAsync_RoutineFails_NodeIsRestoredAnyway()
+    {
+        await Assert.That(async () => { await executor.RunWithAgentStoppedAsync<int>("Test", _ => throw new InvalidOperationException("boom"), TestData.Ct); })
+            .Throws<InvalidOperationException>();
+
+        await Assert.That(string.Join(" > ", calls)).IsEqualTo("drain > stop > start > restore(True)");
+    }
+
+    [Test]
+    public async Task RunWithAgentStoppedAsync_CancelledWhileDraining_DoesNotStopAgent()
+    {
+        drain.DrainAsync(Arg.Any<string>(), Arg.Any<Func<bool>?>(), Arg.Any<CancellationToken>()).Throws(new OperationCanceledException());
+
+        await Assert.That(async () => { await executor.RunWithAgentStoppedAsync("Test", _ => Task.FromResult(1), TestData.Ct); })
+            .Throws<OperationCanceledException>();
+
+        agent.StopAsync(Arg.Any<CancellationToken>()).WasNeverCalled();
+        await Assert.That(executor.IsBusy).IsFalse();
     }
 
     [Test]
@@ -102,6 +146,20 @@ public sealed class MaintenanceExecutorTests : IDisposable
 
         agent.StartAsync(Arg.Any<CancellationToken>()).WasCalled(Times.Once);
         logger.VerifyLog().AtLevel(LogLevel.Warning).ContainingMessage("läuft nicht").WasCalled(Times.Once);
+        drain.ReleaseStaleOfflineAsync(Arg.Any<CancellationToken>()).WasCalled(Times.Once);
+    }
+
+    [Test]
+    public async Task TryEnsureAgentRunningAsync_WhileBusy_DoesNotTouchOfflineMark()
+    {
+        var release = new TaskCompletionSource<int>(TaskCreationOptions.RunContinuationsAsynchronously);
+        var running = executor.RunWithAgentStoppedAsync("Test", _ => release.Task, TestData.Ct);
+
+        await Assert.That(await executor.TryEnsureAgentRunningAsync(TestData.Ct)).IsFalse();
+        release.SetResult(1);
+        await running;
+
+        drain.ReleaseStaleOfflineAsync(Arg.Any<CancellationToken>()).WasNeverCalled();
     }
 
     [Test]

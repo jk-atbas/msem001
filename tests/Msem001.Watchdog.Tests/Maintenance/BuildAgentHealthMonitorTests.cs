@@ -13,6 +13,7 @@ public sealed class BuildAgentHealthMonitorTests : IDisposable
     private readonly Mock<IPodmanMachine> machine = Mock.Of<IPodmanMachine>();
     private readonly Mock<IMaintenanceScripts> scripts = Mock.Of<IMaintenanceScripts>();
     private readonly Mock<IJenkinsAgent> agent = Mock.Of<IJenkinsAgent>();
+    private readonly Mock<IJenkinsAgentDrain> drain = Mock.Of<IJenkinsAgentDrain>();
     private readonly FakeTimeProvider time = new(new DateTimeOffset(2026, 11, 13, 8, 0, 0, TimeSpan.Zero));
     private readonly List<string> calls = [];
     private readonly MaintenanceExecutor executor;
@@ -26,7 +27,7 @@ public sealed class BuildAgentHealthMonitorTests : IDisposable
         agent.StopAsync(Arg.Any<CancellationToken>()).Callback(() => calls.Add("agent stop"));
         agent.StartAsync(Arg.Any<CancellationToken>()).Callback(() => calls.Add("agent start"));
 
-        executor = new MaintenanceExecutor(agent.Object, Mock.Logger<MaintenanceExecutor>());
+        executor = new MaintenanceExecutor(agent.Object, drain.Object, Mock.Logger<MaintenanceExecutor>());
         var recovery = new PodmanRecovery(health.Object, machine.Object, scripts.Object, options, time, Mock.Logger<PodmanRecovery>());
         monitor = new BuildAgentHealthMonitor(health.Object, recovery, executor, options, time, Mock.Logger<BuildAgentHealthMonitor>());
     }

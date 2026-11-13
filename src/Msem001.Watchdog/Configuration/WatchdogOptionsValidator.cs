@@ -40,6 +40,9 @@ internal sealed class WatchdogOptionsValidator : IValidateOptions<WatchdogOption
 
         RequirePositive(disk.CheckInterval, "Watchdog:Disk:CheckInterval", errors);
         RequireNotNegative(disk.MaintenanceCooldown, "Watchdog:Disk:MaintenanceCooldown", errors);
+
+        if (disk.ImmediateMaintenanceThresholdGb < 0 || disk.ImmediateMaintenanceThresholdGb > disk.CleanupThresholdGb)
+            errors.Add("Watchdog:Disk:ImmediateMaintenanceThresholdGb muss zwischen 0 und CleanupThresholdGb liegen.");
         RequirePositive(disk.UsageAlertRepeatInterval, "Watchdog:Disk:UsageAlertRepeatInterval", errors);
     }
 
@@ -102,6 +105,13 @@ internal sealed class WatchdogOptionsValidator : IValidateOptions<WatchdogOption
 
         RequirePositive(agent.StopTimeout, "Watchdog:JenkinsAgent:StopTimeout", errors);
         RequireNotNegative(agent.StartupGracePeriod, "Watchdog:JenkinsAgent:StartupGracePeriod", errors);
+
+        if (string.IsNullOrWhiteSpace(agent.ApiUser) != string.IsNullOrWhiteSpace(agent.ApiToken))
+            errors.Add("Watchdog:JenkinsAgent:ApiUser und ApiToken müssen gemeinsam gesetzt sein (ApiToken in appsettings.Local.json hinterlegen).");
+
+        RequirePositive(agent.ApiTimeout, "Watchdog:JenkinsAgent:ApiTimeout", errors);
+        RequireNotNegative(agent.DrainTimeout, "Watchdog:JenkinsAgent:DrainTimeout", errors);
+        RequirePositive(agent.DrainPollInterval, "Watchdog:JenkinsAgent:DrainPollInterval", errors);
     }
 
     private static void ValidateMail(MailOptions mail, List<string> errors)

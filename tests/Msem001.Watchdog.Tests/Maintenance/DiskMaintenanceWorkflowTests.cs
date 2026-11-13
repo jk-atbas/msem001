@@ -15,6 +15,7 @@ public sealed class DiskMaintenanceWorkflowTests : IDisposable
     private readonly Mock<IPodmanHealthChecker> health = Mock.Of<IPodmanHealthChecker>();
     private readonly Mock<IPodmanMachine> machine = Mock.Of<IPodmanMachine>();
     private readonly Mock<IJenkinsAgent> agent = Mock.Of<IJenkinsAgent>();
+    private readonly Mock<IJenkinsAgentDrain> drain = Mock.Of<IJenkinsAgentDrain>();
     private readonly FakeTimeProvider time = new(new DateTimeOffset(2026, 11, 13, 8, 0, 0, TimeSpan.Zero));
     private readonly MockLogger<DiskMaintenanceWorkflow> logger = Mock.Logger<DiskMaintenanceWorkflow>();
     private readonly List<string> calls = [];
@@ -31,12 +32,46 @@ public sealed class DiskMaintenanceWorkflowTests : IDisposable
         agent.StopAsync(Arg.Any<CancellationToken>()).Callback(() => calls.Add("agent stop"));
         agent.StartAsync(Arg.Any<CancellationToken>()).Callback(() => calls.Add("agent start"));
 
-        executor = new MaintenanceExecutor(agent.Object, Mock.Logger<MaintenanceExecutor>());
+        executor = new MaintenanceExecutor(agent.Object, drain.Object, Mock.Logger<MaintenanceExecutor>());
         var recovery = new PodmanRecovery(health.Object, machine.Object, scripts.Object, options, time, Mock.Logger<PodmanRecovery>());
         workflow = new DiskMaintenanceWorkflow(disk.Object, scripts.Object, recovery, executor, options, time, logger);
     }
 
     public void Dispose() => executor.Dispose();
+
+    [Test]
+    public async Task RunAsync_PassesCriticalSpaceCheckToDrain()
+    {
+        Func<bool>? isUrgent = null;
+        drain.DrainAsync(Arg.Any<string>(), Arg.Any<Func<bool>?>(), Arg.Any<CancellationToken>()).Callback((_, urgent, _) => isUrgent = urgent);
+        disk.GetDiskSpace().ReturnsSequentially(TestData.Disk(freeGb: 40), TestData.Disk(freeGb: 250));
+        await workflow.RunAsync(MaintenanceTrigger.Periodic, TestData.Ct);
+
+        disk.GetDiskSpace().Returns(TestData.Disk(freeGb: 11));
+        await Assert.That(isUrgent!()).IsFalse();
+
+        disk.GetDiskSpace().Returns(TestData.Disk(freeGb: 9.5));
+        await Assert.That(isUrgent()).IsTrue();
+        logger.VerifyLog().AtLevel(LogLevel.Warning).ContainingMessage("Kritisch wenig Speicherplatz").WasCalled(Times.Once);
+
+        disk.GetDiskSpace().Throws(new IOException("Laufwerk weg"));
+        await Assert.That(isUrgent()).IsFalse();
+        logger.VerifyLog().AtLevel(LogLevel.Warning).WithException<IOException>().WasCalled(Times.Once);
+    }
+
+    [Test]
+    public async Task RunAsync_PeriodicWhileMaintenanceRuns_IsSkipped()
+    {
+        disk.GetDiskSpace().Returns(TestData.Disk(freeGb: 40));
+        var release = new TaskCompletionSource<int>(TaskCreationOptions.RunContinuationsAsynchronously);
+        var running = executor.RunWithAgentStoppedAsync("Andere", _ => release.Task, TestData.Ct);
+
+        await Assert.That(await workflow.RunAsync(MaintenanceTrigger.Periodic, TestData.Ct)).IsEqualTo(DiskMaintenanceOutcome.SkippedBusy);
+
+        release.SetResult(1);
+        await running;
+        scripts.RunJenkinsWorkspaceCleanupAsync(Arg.Any<CancellationToken>()).WasNeverCalled();
+    }
 
     [Test]
     public async Task RunAsync_EnoughSpace_DoesNothing()

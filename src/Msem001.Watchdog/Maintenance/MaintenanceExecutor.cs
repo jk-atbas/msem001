@@ -5,8 +5,9 @@ namespace Msem001.Watchdog.Maintenance;
 
 /// <summary>
 /// Serializes all maintenance routines and wraps them with stopping and restarting the Jenkins agent.
+/// Before stopping, running builds may finish (<see cref="IJenkinsAgentDrain"/>).
 /// </summary>
-internal sealed partial class MaintenanceExecutor(IJenkinsAgent agent, ILogger<MaintenanceExecutor> logger) : IDisposable
+internal sealed partial class MaintenanceExecutor(IJenkinsAgent agent, IJenkinsAgentDrain drain, ILogger<MaintenanceExecutor> logger) : IDisposable
 {
     private readonly SemaphoreSlim gate = new(1, 1);
 
@@ -14,9 +15,18 @@ internal sealed partial class MaintenanceExecutor(IJenkinsAgent agent, ILogger<M
     public bool IsBusy => gate.CurrentCount == 0;
 
     /// <summary>
-    /// Stops the agent, runs the routine and always reconnects the agent afterwards.
+    /// Waits for running builds, stops the agent, runs the routine and always reconnects the agent afterwards.
     /// </summary>
-    public async Task<T> RunWithAgentStoppedAsync<T>(string routineName, Func<CancellationToken, Task<T>> routine, CancellationToken cancellationToken)
+    /// <returns>The result of the routine.</returns>
+    public Task<T> RunWithAgentStoppedAsync<T>(string routineName, Func<CancellationToken, Task<T>> routine, CancellationToken cancellationToken) =>
+        RunWithAgentStoppedAsync(routineName, routine, isUrgent: null, cancellationToken);
+
+    /// <summary>
+    /// Waits for running builds (unless <paramref name="isUrgent"/> returns <see langword="true"/>), stops the agent,
+    /// runs the routine and always reconnects the agent afterwards.
+    /// </summary>
+    /// <returns>The result of the routine.</returns>
+    public async Task<T> RunWithAgentStoppedAsync<T>(string routineName, Func<CancellationToken, Task<T>> routine, Func<bool>? isUrgent, CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(routine);
 
@@ -25,17 +35,24 @@ internal sealed partial class MaintenanceExecutor(IJenkinsAgent agent, ILogger<M
         try
         {
             LogRoutineStarting(logger, routineName);
-            await StopAgentAsync(cancellationToken).ConfigureAwait(false);
-
+            var markedOffline = await drain.DrainAsync(routineName, isUrgent, cancellationToken).ConfigureAwait(false);
             try
             {
-                return await routine(cancellationToken).ConfigureAwait(false);
+                await StopAgentAsync(cancellationToken).ConfigureAwait(false);
+                try
+                {
+                    return await routine(cancellationToken).ConfigureAwait(false);
+                }
+                finally
+                {
+                    // Reconnect even if the routine failed or the service is shutting down.
+                    await StartAgentAsync().ConfigureAwait(false);
+                    LogRoutineFinished(logger, routineName, stopwatch.Elapsed);
+                }
             }
             finally
             {
-                // Reconnect even if the routine failed or the service is shutting down.
-                await StartAgentAsync().ConfigureAwait(false);
-                LogRoutineFinished(logger, routineName, stopwatch.Elapsed);
+                await drain.RestoreAsync(markedOffline, CancellationToken.None).ConfigureAwait(false);
             }
         }
         finally
@@ -61,6 +78,7 @@ internal sealed partial class MaintenanceExecutor(IJenkinsAgent agent, ILogger<M
                 await agent.StartAsync(cancellationToken).ConfigureAwait(false);
             }
 
+            await drain.ReleaseStaleOfflineAsync(cancellationToken).ConfigureAwait(false);
             return true;
         }
         finally
@@ -71,7 +89,7 @@ internal sealed partial class MaintenanceExecutor(IJenkinsAgent agent, ILogger<M
 
     public void Dispose() => gate.Dispose();
 
-    [LoggerMessage(EventId = 6000, Level = LogLevel.Information, Message = "Wartungsroutine '{RoutineName}' beginnt, Jenkins-Agent wird beendet")]
+    [LoggerMessage(EventId = 6000, Level = LogLevel.Information, Message = "Wartungsroutine '{RoutineName}' beginnt")]
     private static partial void LogRoutineStarting(ILogger logger, string routineName);
 
     [LoggerMessage(EventId = 6001, Level = LogLevel.Information, Message = "Wartungsroutine '{RoutineName}' abgeschlossen nach {Duration}")]

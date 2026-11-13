@@ -21,6 +21,7 @@ public sealed class WorkerTests : IDisposable
     private readonly Mock<IPodmanHealthChecker> health = Mock.Of<IPodmanHealthChecker>();
     private readonly Mock<IPodmanMachine> machine = Mock.Of<IPodmanMachine>();
     private readonly Mock<IJenkinsAgent> agent = Mock.Of<IJenkinsAgent>();
+    private readonly Mock<IJenkinsAgentDrain> drain = Mock.Of<IJenkinsAgentDrain>();
     private readonly FakeTimeProvider time = new(new DateTimeOffset(2026, 11, 13, 20, 40, 0, TimeSpan.Zero));
     private readonly IOptions<WatchdogOptions> options = TestData.CreateOptions();
     private readonly MaintenanceExecutor executor;
@@ -36,7 +37,7 @@ public sealed class WorkerTests : IDisposable
         health.CheckAsync(Arg.Any<CancellationToken>()).Returns(TestData.Healthy());
         agent.IsRunning().Returns(true);
         agent.StartAsync(Arg.Any<CancellationToken>()).Callback(() => Interlocked.Increment(ref agentStarts));
-        executor = new MaintenanceExecutor(agent.Object, Mock.Logger<MaintenanceExecutor>());
+        executor = new MaintenanceExecutor(agent.Object, drain.Object, Mock.Logger<MaintenanceExecutor>());
     }
 
     public void Dispose() => executor.Dispose();

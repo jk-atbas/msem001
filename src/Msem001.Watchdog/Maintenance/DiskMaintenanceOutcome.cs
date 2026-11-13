@@ -16,4 +16,7 @@ internal enum DiskMaintenanceOutcome
 
     /// <summary>The Jenkins workspace was cleaned and the Podman machine was reset.</summary>
     CleanupAndPodmanReset = 3,
+
+    /// <summary>Too little space, but a maintenance routine is already running (e.g. waiting for builds).</summary>
+    SkippedBusy = 4,
 }

@@ -9,7 +9,8 @@ namespace Msem001.Watchdog.Maintenance;
 /// <summary>
 /// Free space below <see cref="DiskOptions.CleanupThresholdGb"/>: clean the Jenkins workspace.
 /// Still below <see cref="DiskOptions.PodmanResetThresholdGb"/> afterwards: reset the Podman machine.
-/// The Jenkins agent is stopped before and reconnected after the routine.
+/// The Jenkins agent is stopped before and reconnected after the routine. Running builds may finish first,
+/// unless the free space drops below <see cref="DiskOptions.ImmediateMaintenanceThresholdGb"/>.
 /// </summary>
 internal sealed partial class DiskMaintenanceWorkflow(
     IDiskSpaceProbe diskSpaceProbe,
@@ -38,6 +39,12 @@ internal sealed partial class DiskMaintenanceWorkflow(
             return DiskMaintenanceOutcome.NotRequired;
         }
 
+        if (trigger == MaintenanceTrigger.Periodic && executor.IsBusy)
+        {
+            LogBusy(logger, before);
+            return DiskMaintenanceOutcome.SkippedBusy;
+        }
+
         var now = timeProvider.GetUtcNow();
         lock (sync)
         {
@@ -52,7 +59,7 @@ internal sealed partial class DiskMaintenanceWorkflow(
 
         LogLowSpace(logger, trigger, before, settings.CleanupThresholdGb);
         return await executor
-            .RunWithAgentStoppedAsync("Speicherbereinigung", token => RunMaintenanceAsync(before, token), cancellationToken)
+            .RunWithAgentStoppedAsync("Speicherbereinigung", token => RunMaintenanceAsync(before, token), IsCriticallyLow, cancellationToken)
             .ConfigureAwait(false);
     }
 
@@ -82,6 +89,34 @@ internal sealed partial class DiskMaintenanceWorkflow(
 
     [LoggerMessage(EventId = 7008, Level = LogLevel.Information, Message = "Speicherwartung abgeschlossen ({Outcome}): frei vorher {FreeBeforeGb:F1} GB, nach Bereinigung {FreeAfterCleanupGb:F1} GB, final {FreeFinalGb:F1} GB")]
     private static partial void LogSummary(ILogger logger, DiskMaintenanceOutcome outcome, double freeBeforeGb, double freeAfterCleanupGb, double freeFinalGb);
+
+    [LoggerMessage(EventId = 7009, Level = LogLevel.Debug, Message = "Wenig Speicherplatz, eine Wartungsroutine läuft bereits: {Disk}")]
+    private static partial void LogBusy(ILogger logger, DiskSpaceInfo disk);
+
+    [LoggerMessage(EventId = 7010, Level = LogLevel.Warning, Message = "Kritisch wenig Speicherplatz: {Disk} (< {ThresholdGb} GB), laufende Builds werden nicht abgewartet")]
+    private static partial void LogCriticallyLow(ILogger logger, DiskSpaceInfo disk, double thresholdGb);
+
+    [LoggerMessage(EventId = 7011, Level = LogLevel.Warning, Message = "Speicherplatz konnte während des Wartens nicht gemessen werden")]
+    private static partial void LogProbeFailed(ILogger logger, Exception exception);
+
+    private bool IsCriticallyLow()
+    {
+        var threshold = options.Value.Disk.ImmediateMaintenanceThresholdGb;
+        try
+        {
+            var disk = diskSpaceProbe.GetDiskSpace();
+            if (disk.FreeGigabytes >= threshold)
+                return false;
+
+            LogCriticallyLow(logger, disk, threshold);
+            return true;
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or ArgumentException)
+        {
+            LogProbeFailed(logger, ex);
+            return false;
+        }
+    }
 
     private async Task<DiskMaintenanceOutcome> RunMaintenanceAsync(DiskSpaceInfo before, CancellationToken cancellationToken)
     {

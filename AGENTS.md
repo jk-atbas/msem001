@@ -26,7 +26,8 @@ Versionen: v1 = Commit `44fecc3`, v2 = `e008ecf` (RAM-Prüfung). Aktuelle `<Vers
 | F2 | Danach weiterhin < 200 GB → `scripts\Reset-PodmanMachine.ps1 -Force`, danach sicherstellen, dass die Machine läuft (sonst starten) | `DiskMaintenanceWorkflow` + `PodmanRecovery`. `-Force` wird **immer im Code** angehängt (siehe §6) |
 | F3 | Prüfung F1/F2 zusätzlich ca. 1 h + Puffer vor dem Nightly (22:00) | `NightlyPreCheckWorker`, Standard 20:45, ohne Sperrfrist |
 | F4 | win-sshproxy/Docker-API zyklisch prüfen, bei Defekt Reset | `BuildAgentHealthWorker` → `BuildAgentHealthMonitor` → `PodmanHealthChecker` (`/_ping` über Named Pipe). Machine gestoppt → starten. Proxy tot (2× in Folge) → Reset. Reset fehlgeschlagen → `Critical`, neuer Versuch nach 30 min |
-| F5 | Vor **jeder** Skript-Routine Jenkins-Agent stoppen, danach wieder verbinden – auch wenn das Skript fehlschlägt | `MaintenanceExecutor` (exklusiv per Semaphore): Agent stoppen → Skript(e) → Podman prüfen → Agent starten |
+| F5 | Vor **jeder** Skript-Routine Jenkins-Agent stoppen, danach wieder verbinden – auch wenn das Skript fehlschlägt | `MaintenanceExecutor` (exklusiv per Semaphore): Agent leerlaufen lassen → Agent stoppen → Skript(e) → Podman prüfen → Agent starten → Node wieder online |
+| F14 | Laufende Builds bei einer Wartung nicht abbrechen | `JenkinsAgentDrain` über `JenkinsApiClient` (REST, Basic Auth mit API-Token): Node *temporarily offline* (Grund mit Präfix `[MSEM001 Watchdog]`), warten bis `idle` (max. `DrainTimeout` 1 h), danach wieder online. Sofort ohne Warten bei < `ImmediateMaintenanceThresholdGb` (10 GB) oder ohne Token. Offline durch eine Person bleibt erhalten. Hängengebliebener eigener Offline-Status wird von `TryEnsureAgentRunningAsync` aufgeräumt |
 | F6 | Agent-Start: `java -jar agent.jar -url <url> -secret <secret> -name "einarbeitungs-laptop" -webSocket -workDir "C:\jenkins"`; der Agent muss als Admin laufen | `JenkinsAgentController`. Der Agent erbt das Dienstkonto. Laufende Agents werden per WMI-Kommandozeile erkannt, damit kein zweiter gestartet wird |
 | F7 | Dienstkonto `MSEM001\atbas` (lokaler Admin) | `deploy\Install-WatchdogService.ps1`. `StartupDiagnostics` prüft das Token (`IProcessTokenInspector`): Administratorgruppe aktiv **und** Integritätsstufe ≥ High. Sonst `Error` mit Ursache und Abhilfe (UAC-gefiltert, kein Mitglied, Administratorschutz) |
 | F8 | Ausführliches, strukturiertes Logging | Serilog: Konsole + Text + CLEF unter `%ProgramData%\Msem001Watchdog\logs`. **Alle** Logs über `[LoggerMessage]`-Source-Generator mit fester EventId |
@@ -45,7 +46,7 @@ bei der Disk.
 
 1. **Kein Git-Branching, keine Commits und kein Push**, außer der Nutzer verlangt es ausdrücklich.
    Branches und Versionen verwaltet der Nutzer selbst.
-2. **Secrets nie ins Repo.** Jenkins-Secret, Mailjet-Key/-Secret und Empfänger stehen nur in
+2. **Secrets nie ins Repo.** Jenkins-Secret, Jenkins-API-Token, Mailjet-Key/-Secret und Empfänger stehen nur in
    `appsettings.Local.json` (gitignored). Vorlage: `appsettings.Local.example.json`. In Tests ist
    `"s3cr3t"` der Platzhalter.
 3. **Keine persönlichen Daten** (Mailadressen, Namen) in Code, Tests, Doku oder externen Requests.
@@ -109,8 +110,9 @@ registriert, damit Tests eigene Instanzen vorgeben können.
 * `Disk/`, `Memory/`: Probe-Interface, Implementierung, Info-Record (`ToDisplayString`) und Evaluator.
 * `Processes/`: `ProcessRunner` (Timeout, Kill des Prozessbaums, Output-Logging),
   `SystemProcesses`/`WmiProcessQuery`.
-* `Scripts/`, `Podman/`, `Jenkins/`: Anbindungen an PowerShell, die podman-CLI mit Named-Pipe-Probe und den
-  Agent-Prozess.
+* `Scripts/`, `Podman/`, `Jenkins/`: Anbindungen an PowerShell, die podman-CLI mit Named-Pipe-Probe, den
+  Agent-Prozess und die Jenkins-REST-API (`JenkinsApiClient`, `JenkinsAgentDrain`). Der API-Client wird in Tests
+  über `StubHttpHandler` (TestSupport) gegen feste HTTP-Antworten geprüft.
 * `Maintenance/`: `MaintenanceExecutor` (exklusive Wartungsfenster), `DiskMaintenanceWorkflow`,
   `BuildAgentHealthMonitor`.
 * `Workers/`: `BackgroundService`s. Ein Zyklus ist als `internal` Methode testbar
@@ -132,13 +134,13 @@ BuildAgentHealthWorker, DiskMonitorWorker, MemoryMonitorWorker, NightlyPreCheckW
 
   | Bereich | Klasse | Bereich | Klasse |
   |---|---|---|---|
-  | 100–106 | StartupDiagnostics | 7000 | DiskMaintenanceWorkflow |
+  | 100–108 | StartupDiagnostics | 7000 | DiskMaintenanceWorkflow |
   | 1100 | DiskUsageAlertEvaluator | 8000 | BuildAgentHealthMonitor |
   | 1200 | MemoryUsageAlertEvaluator | 9000 | MailAlertDispatcher |
   | 2000 | ProcessRunner | 10000 | DiskMonitorWorker |
   | 3000 | PowerShellMaintenanceScripts | 11000 | NightlyPreCheckWorker |
   | 4000 / 4100 / 4200 | PodmanCli / PodmanHealthChecker / PodmanRecovery | 12000 | BuildAgentHealthWorker |
-  | 5000 | JenkinsAgentController | 13000 | MemoryMonitorWorker |
+  | 5000 / 5100 | JenkinsAgentController / JenkinsAgentDrain | 13000 | MemoryMonitorWorker |
   | 6000 | MaintenanceExecutor | | |
 
 ## 6. Bekannte Fallstricke
@@ -200,7 +202,8 @@ dotnet test --solution Msem001.Watchdog.slnx --coverage --coverage-settings cove
   verifiziert werden.
 * Der Mailjet-Absender (`Mail:From` + Suffix) muss in Mailjet als Absender verifiziert sein.
   Echter SMTP-Versand ist nicht automatisiert getestet.
-* Eine Wartungsroutine beendet den Agent auch mitten in einem Build. Eine Prüfung „Build läuft?“ über die
-  Jenkins-API wäre eine mögliche Erweiterung.
+* Sanfte Wartung gegen den echten Jenkins-Controller verifizieren: Offline-/Online-Schalten mit dem
+  API-Token, `idle`-Erkennung bei laufender Pipeline. Der Controller läuft über HTTP, der Token geht also
+  unverschlüsselt durchs interne Netz.
 * Ein anderweitiger Autostart des Agents (geplante Aufgabe o.ä.) sollte auf MSEM001 deaktiviert werden.
 * `Program.cs` (Host-Aufbau) und die Deploy-Skripte sind nicht automatisiert getestet.

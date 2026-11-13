@@ -26,6 +26,12 @@ public sealed class DiskOptions
     /// <summary>Minimum time between two periodic maintenance runs (prevents killing the agent in a loop).</summary>
     public TimeSpan MaintenanceCooldown { get; set; } = TimeSpan.FromHours(2);
 
+    /// <summary>
+    /// Below this free space the maintenance does not wait for running builds (see <see cref="JenkinsAgentOptions.DrainTimeout"/>),
+    /// the agent is stopped immediately. 0 = always wait.
+    /// </summary>
+    public double ImmediateMaintenanceThresholdGb { get; set; } = 10;
+
     /// <summary>A still existing high disk usage is reported again after this interval.</summary>
     public TimeSpan UsageAlertRepeatInterval { get; set; } = TimeSpan.FromHours(6);
 }
