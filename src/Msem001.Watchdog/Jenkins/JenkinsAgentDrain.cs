@@ -61,6 +61,8 @@ internal sealed partial class JenkinsAgentDrain(
         }
         catch (Exception ex) when (IsApiFailure(ex))
         {
+            // A failed toggle may still have taken effect in Jenkins; the next agent check releases our mark.
+            staleCheckPending = true;
             LogDrainApiFailed(logger, routineName, ex);
             return markedOffline;
         }

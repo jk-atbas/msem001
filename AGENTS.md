@@ -159,6 +159,10 @@ BuildAgentHealthWorker, DiskMonitorWorker, MemoryMonitorWorker, NightlyPreCheckW
   hat trotzdem volle Rechte (auf MSEM001 am 13.11.2026 beobachtet: Elevation `Default`, Administratorgruppe
   `Enabled`). Maßgeblich ist `ProcessTokenInfo.HasAdministratorRights`. `IsPrivilegedProcess` dient nur als
   Fallback, wenn die Token-Untersuchung fehlschlägt.
+* **Jenkins-API ohne automatische Redirects.** `toggleOffline` antwortet mit 302 auf die Node-Seite.
+  `HttpClient` entfernt beim Folgen den `Authorization`-Header, der anonyme Folge-Request endet mit 403,
+  obwohl der Toggle gegriffen hat (auf MSEM001 am 13.11.2026 beobachtet). Deshalb `AllowAutoRedirect = false`
+  in `JenkinsApiClient.CreateHandler` und 3xx als Erfolg werten.
 * `Environment.NewLine` ist bereits vom EnvironmentAbstractions-Analyzer gebannt; ein zweiter Eintrag in
   `BannedSymbols.txt` führt zu RS0031.
 * Mit .NET 10+ wird VSTest nicht mehr unterstützt. `global.json` setzt den Runner auf

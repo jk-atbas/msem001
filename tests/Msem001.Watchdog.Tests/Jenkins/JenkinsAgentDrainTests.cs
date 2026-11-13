@@ -171,6 +171,22 @@ public sealed class JenkinsAgentDrainTests
     }
 
     [Test]
+    public async Task DrainAsync_ToggleFailsButTookEffect_NextStaleCheckReleasesMark()
+    {
+        api.GetNodeStatusAsync(Arg.Any<CancellationToken>()).Returns(OnlineIdle);
+        await drain.ReleaseStaleOfflineAsync(TestData.Ct); // start check: nothing to do, no longer pending
+        api.ToggleOfflineAsync(Arg.Any<string?>(), Arg.Any<CancellationToken>()).Throws(new HttpRequestException("403"));
+
+        await Assert.That(await drain.DrainAsync("Test", null, null, TestData.Ct)).IsFalse();
+
+        api.ToggleOfflineAsync(Arg.Any<string?>(), Arg.Any<CancellationToken>()).Callback((message, _) => toggles.Add(message is null ? "online" : "offline"));
+        api.GetNodeStatusAsync(Arg.Any<CancellationToken>()).Returns(OwnOfflineIdle);
+        await drain.ReleaseStaleOfflineAsync(TestData.Ct);
+
+        await Assert.That(toggles).IsEquivalentTo(["online"]);
+    }
+
+    [Test]
     public async Task DrainAsync_HttpTimeout_IsTreatedAsApiFailure()
     {
         api.GetNodeStatusAsync(Arg.Any<CancellationToken>()).Throws(new TaskCanceledException("timeout", new TimeoutException()));

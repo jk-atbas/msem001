@@ -9,6 +9,8 @@ namespace Msem001.Watchdog.Jenkins;
 /// <summary>
 /// <see cref="IJenkinsApi"/> via HTTP basic authentication with user and API token.
 /// Requests authenticated with an API token do not need a CSRF crumb.
+/// Redirects are not followed: <c>toggleOffline</c> answers with a redirect to the node page, and
+/// <see cref="HttpClient"/> drops the authorization header on redirects, so the follow-up request would end with 403.
 /// </summary>
 internal sealed class JenkinsApiClient : IJenkinsApi, IDisposable
 {
@@ -18,7 +20,7 @@ internal sealed class JenkinsApiClient : IJenkinsApi, IDisposable
     private readonly JenkinsAgentOptions settings;
 
     public JenkinsApiClient(IOptions<WatchdogOptions> options)
-        : this(new SocketsHttpHandler { PooledConnectionLifetime = TimeSpan.FromMinutes(5) }, options)
+        : this(CreateHandler(), options)
     {
     }
 
@@ -64,10 +66,18 @@ internal sealed class JenkinsApiClient : IJenkinsApi, IDisposable
             path += "?offlineMessage=" + Uri.EscapeDataString(offlineMessage);
 
         using var response = await http.PostAsync(new Uri(path, UriKind.Relative), content: null, cancellationToken).ConfigureAwait(false);
-        response.EnsureSuccessStatusCode();
+
+        // Jenkins confirms the toggle with a redirect to the node page.
+        if (!IsRedirect(response.StatusCode))
+            response.EnsureSuccessStatusCode();
     }
 
     public void Dispose() => http.Dispose();
+
+    internal static SocketsHttpHandler CreateHandler() =>
+        new() { PooledConnectionLifetime = TimeSpan.FromMinutes(5), AllowAutoRedirect = false };
+
+    private static bool IsRedirect(System.Net.HttpStatusCode status) => (int)status is >= 300 and < 400;
 
     private string NodePath(string suffix) => $"computer/{Uri.EscapeDataString(settings.AgentName)}/{suffix}";
 }

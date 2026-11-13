@@ -89,6 +89,27 @@ public sealed class JenkinsApiClientTests
     }
 
     [Test]
+    [Arguments(HttpStatusCode.Found)]
+    [Arguments(HttpStatusCode.SeeOther)]
+    public async Task ToggleOfflineAsync_RedirectFromJenkins_IsSuccess(HttpStatusCode status)
+    {
+        var handler = new StubHttpHandler(_ => new HttpResponseMessage(status) { Headers = { Location = new Uri("http://jenkins.local:8080/computer/einarbeitungs-laptop/") } });
+        using var client = CreateClient(handler);
+
+        await client.ToggleOfflineAsync(null, TestData.Ct);
+
+        await Assert.That(handler.Requests.Count).IsEqualTo(1);
+    }
+
+    [Test]
+    public async Task CreateHandler_DoesNotFollowRedirects()
+    {
+        using var handler = JenkinsApiClient.CreateHandler();
+
+        await Assert.That(handler.AllowAutoRedirect).IsFalse();
+    }
+
+    [Test]
     public async Task ToggleOfflineAsync_Forbidden_Throws()
     {
         using var client = CreateClient(new StubHttpHandler(_ => new HttpResponseMessage(HttpStatusCode.Forbidden)));
