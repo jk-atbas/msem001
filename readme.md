@@ -50,6 +50,7 @@ mit vollem Admin-Token, weil Dienst-Anmeldungen nicht der UAC-Filterung unterlie
 | Nightly-Vorabprüfung | täglich 20:45 (Nightly um 22:00) | wie oben, ohne Sperrfrist |
 | Podman-Machine läuft + Docker-API über `\.\pipe\docker_engine` (win-sshproxy) antwortet auf `/_ping` | 2 min, erstmals 1 min nach Start | Machine gestoppt (z.B. nach Neustart): starten. Proxy weiterhin tot oder 2× hintereinander tot: Machine zurücksetzen. Schlägt das fehl: `Critical` und neuer Versuch nach 30 min |
 | Jenkins-Agent läuft | 2 min | `java -jar agent.jar -url … -secret … -name einarbeitungs-laptop -webSocket -workDir C:\jenkins` starten |
+| Container laufen länger als 1 h | 10 min, erstmals 1 min nach Start | Container mit `podman rm --force --volumes` entfernen (Log `Warning` mit Name, Image und Laufzeit). Siehe unten |
 
 Jede Wartungsroutine läuft exklusiv: Agent beenden → Skript(e) → Podman prüfen → Agent neu verbinden.
 Der Agent wird auch dann neu gestartet, wenn ein Skript fehlschlägt.
@@ -72,6 +73,13 @@ online. Ohne Token wird der Agent wie bisher sofort beendet (Warnung im Startlog
 
 Token anlegen: in Jenkins als Benutzer mit dem Recht *Agent → Disconnect* (z.B. Admin) anmelden → Benutzer →
 Security → API Token → „Add new Token“. Benutzer und Token in `appsettings.Local.json` eintragen.
+
+**Container-Bereinigung:** Builds starten Container nur für ihre eigene Dauer (z.B. Testcontainers). Bleibt einer
+liegen, entfernt der Dienst jeden laufenden Container, der länger als `Watchdog:Containers:MaxRunTime` (1 h) läuft,
+auch wenn ein Build ihn noch nutzt. Der Container bekommt `StopTimeout` (10 s) zum Beenden. Container, die dauerhaft
+laufen sollen, über `ExcludedNamePrefixes` ausnehmen (Namensanfang, Groß-/Kleinschreibung egal), z.B.
+`"ExcludedNamePrefixes": [ "registry" ]`. Abschalten mit `Watchdog:Containers:Enabled = false`. Während einer
+Wartung wird nicht geprüft.
 
 Alle Werte sind in `appsettings.json` (Abschnitt `Watchdog`) konfigurierbar.
 

@@ -50,6 +50,10 @@ internal sealed partial class StartupDiagnostics(
             settings.Memory.CheckInterval,
             settings.Memory.SustainedDuration);
 
+        var containers = settings.Containers;
+        var excluded = containers.ExcludedNamePrefixes.Count == 0 ? "keine" : string.Join(", ", containers.ExcludedNamePrefixes);
+        LogContainerConfiguration(logger, containers.Enabled, containers.MaxRunTime, containers.CheckInterval, excluded);
+
         return Task.CompletedTask;
     }
 
@@ -95,6 +99,9 @@ internal sealed partial class StartupDiagnostics(
 
     [LoggerMessage(EventId = 108, Level = LogLevel.Warning, Message = "Sanfte Wartung inaktiv (Watchdog:JenkinsAgent:ApiUser/ApiToken nicht gesetzt): eine Wartung bricht laufende Builds sofort ab")]
     private static partial void LogGracefulMaintenanceDisabled(ILogger logger);
+
+    [LoggerMessage(EventId = 109, Level = LogLevel.Information, Message = "Container-Bereinigung aktiv: {Enabled}, laufende Container älter als {MaxRunTime} werden entfernt (Prüfung alle {Interval}, ausgenommen: {ExcludedPrefixes})")]
+    private static partial void LogContainerConfiguration(ILogger logger, bool enabled, TimeSpan maxRunTime, TimeSpan interval, string excludedPrefixes);
 
     [LoggerMessage(EventId = 103, Level = LogLevel.Information, Message = "MSEM001 Watchdog wird beendet, ein laufender Jenkins-Agent bleibt verbunden")]
     private static partial void LogStopping(ILogger logger);

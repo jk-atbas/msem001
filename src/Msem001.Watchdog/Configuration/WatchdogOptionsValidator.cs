@@ -15,6 +15,7 @@ internal sealed class WatchdogOptionsValidator : IValidateOptions<WatchdogOption
         ValidateDisk(options.Disk, errors);
         ValidateMemory(options.Memory, errors);
         ValidatePodman(options.Podman, errors);
+        ValidateContainers(options.Containers, errors);
         ValidateScripts(options.Scripts, errors);
         ValidateJenkinsAgent(options.JenkinsAgent, errors);
         ValidateMail(options.Mail, errors);
@@ -79,6 +80,16 @@ internal sealed class WatchdogOptionsValidator : IValidateOptions<WatchdogOption
         RequirePositive(podman.CommandTimeout, "Watchdog:Podman:CommandTimeout", errors);
         RequirePositive(podman.StartTimeout, "Watchdog:Podman:StartTimeout", errors);
         RequireNotNegative(podman.ProxySettleTime, "Watchdog:Podman:ProxySettleTime", errors);
+    }
+
+    private static void ValidateContainers(ContainerCleanupOptions containers, List<string> errors)
+    {
+        if (!containers.Enabled)
+            return;
+
+        RequirePositive(containers.CheckInterval, "Watchdog:Containers:CheckInterval", errors);
+        RequirePositive(containers.MaxRunTime, "Watchdog:Containers:MaxRunTime", errors);
+        RequireNotNegative(containers.StopTimeout, "Watchdog:Containers:StopTimeout", errors);
     }
 
     private static void ValidateScripts(ScriptOptions scripts, List<string> errors)

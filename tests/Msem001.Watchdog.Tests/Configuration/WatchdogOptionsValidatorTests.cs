@@ -31,6 +31,9 @@ public sealed class WatchdogOptionsValidatorTests
         yield return () => ("FailureThreshold", o => o.Podman.FailureThreshold = 0);
         yield return () => ("RepairDrainTimeout", o => o.Podman.RepairDrainTimeout = TimeSpan.FromSeconds(-1));
         yield return () => ("ProbeTimeout", o => o.Podman.ProbeTimeout = TimeSpan.Zero);
+        yield return () => ("Containers:CheckInterval", o => o.Containers.CheckInterval = TimeSpan.Zero);
+        yield return () => ("Containers:MaxRunTime", o => o.Containers.MaxRunTime = TimeSpan.Zero);
+        yield return () => ("Containers:StopTimeout", o => o.Containers.StopTimeout = TimeSpan.FromSeconds(-1));
         yield return () => ("PowerShellExecutable", o => o.Scripts.PowerShellExecutable = string.Empty);
         yield return () => ("PodmanResetTimeout", o => o.Scripts.PodmanResetTimeout = TimeSpan.Zero);
         yield return () => ("ControllerUrl", o => o.JenkinsAgent.ControllerUrl = "not a url");
@@ -79,6 +82,8 @@ public sealed class WatchdogOptionsValidatorTests
         options.Mail.Enabled = false;
         options.Memory.Enabled = false;
         options.Memory.CheckInterval = TimeSpan.Zero;
+        options.Containers.Enabled = false;
+        options.Containers.MaxRunTime = TimeSpan.Zero;
 
         await Assert.That(validator.Validate(null, options).Succeeded).IsTrue();
     }

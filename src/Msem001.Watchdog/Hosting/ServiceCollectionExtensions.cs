@@ -42,6 +42,7 @@ internal static class ServiceCollectionExtensions
         services.AddSingleton<ISystemProcesses, SystemProcesses>();
         services.AddSingleton<IMaintenanceScripts, PowerShellMaintenanceScripts>();
         services.AddSingleton<IPodmanMachine, PodmanCli>();
+        services.AddSingleton<IPodmanContainers, PodmanContainerCli>();
         services.AddSingleton<IDockerApiProbe, NamedPipeDockerApiProbe>();
         services.AddSingleton<IPodmanHealthChecker, PodmanHealthChecker>();
         services.AddSingleton<IJenkinsAgent, JenkinsAgentController>();
@@ -55,6 +56,7 @@ internal static class ServiceCollectionExtensions
         services.AddSingleton<MaintenanceExecutor>();
         services.AddSingleton<DiskMaintenanceWorkflow>();
         services.AddSingleton<BuildAgentHealthMonitor>();
+        services.AddSingleton<ContainerCleanup>();
 
         // Mail alerting
         services.AddSingleton<AlertQueue>();
@@ -69,6 +71,7 @@ internal static class ServiceCollectionExtensions
         services.AddHostedService<DiskMonitorWorker>();
         services.AddHostedService<MemoryMonitorWorker>();
         services.AddHostedService<NightlyPreCheckWorker>();
+        services.AddHostedService<ContainerCleanupWorker>();
 
         return services;
     }

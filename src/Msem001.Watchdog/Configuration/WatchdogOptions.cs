@@ -20,6 +20,9 @@ public sealed class WatchdogOptions
     /// <summary>Podman machine and Docker API proxy monitoring.</summary>
     public PodmanOptions Podman { get; set; } = new();
 
+    /// <summary>Removal of long running containers.</summary>
+    public ContainerCleanupOptions Containers { get; set; } = new();
+
     /// <summary>PowerShell maintenance scripts.</summary>
     public ScriptOptions Scripts { get; set; } = new();
 

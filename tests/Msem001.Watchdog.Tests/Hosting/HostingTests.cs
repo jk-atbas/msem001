@@ -8,6 +8,7 @@ using Msem001.Watchdog.Configuration;
 using Msem001.Watchdog.Hosting;
 using Msem001.Watchdog.Jenkins;
 using Msem001.Watchdog.Memory;
+using Msem001.Watchdog.Podman;
 using Msem001.Watchdog.Processes;
 using Msem001.Watchdog.Processes.Abstractions;
 using Msem001.Watchdog.Tests.TestSupport;
@@ -51,7 +52,7 @@ public sealed class HostingTests
 
         var hostedServices = provider.GetServices<IHostedService>().Select(s => s.GetType().Name);
         await Assert.That(string.Join(",", hostedServices)).IsEqualTo(
-            $"{nameof(StartupDiagnostics)},{nameof(MailAlertDispatcher)},{nameof(BuildAgentHealthWorker)},{nameof(DiskMonitorWorker)},{nameof(MemoryMonitorWorker)},{nameof(NightlyPreCheckWorker)}");
+            $"{nameof(StartupDiagnostics)},{nameof(MailAlertDispatcher)},{nameof(BuildAgentHealthWorker)},{nameof(DiskMonitorWorker)},{nameof(MemoryMonitorWorker)},{nameof(NightlyPreCheckWorker)},{nameof(ContainerCleanupWorker)}");
         await Assert.That(provider.GetServices<ILoggerProvider>()).Contains(p => p is MailAlertLoggerProvider);
 
         // Real system abstractions in production
@@ -67,6 +68,10 @@ public sealed class HostingTests
         await Assert.That(options.JenkinsAgent.DrainTimeout).IsEqualTo(TimeSpan.FromHours(1));
         await Assert.That(options.Podman.RepairDrainTimeout).IsEqualTo(TimeSpan.FromMinutes(10));
         await Assert.That(options.JenkinsAgent.IsApiConfigured).IsFalse();
+        await Assert.That(provider.GetRequiredService<IPodmanContainers>()).IsTypeOf<PodmanContainerCli>();
+        await Assert.That(options.Containers.Enabled).IsTrue();
+        await Assert.That(options.Containers.MaxRunTime).IsEqualTo(TimeSpan.FromHours(1));
+        await Assert.That(options.Containers.ExcludedNamePrefixes).IsEmpty();
     }
 
     [Test]
@@ -120,6 +125,7 @@ public sealed class HostingTests
         logger.VerifyLog().AtLevel(LogLevel.Information).ContainingMessage("Bereinigung < 50 GB").WasCalled(Times.Once);
         logger.VerifyLog().AtLevel(LogLevel.Information).ContainingMessage("RAM-Überwachung aktiv: True, Error > 90 %, Critical > 95 %").WasCalled(Times.Once);
         logger.VerifyLog().AtLevel(LogLevel.Warning).ContainingMessage("Sanfte Wartung inaktiv").WasCalled(Times.Once);
+        logger.VerifyLog().AtLevel(LogLevel.Information).ContainingMessage("Container-Bereinigung aktiv: True, laufende Container älter als 01:00:00").ContainingMessage("ausgenommen: keine").WasCalled(Times.Once);
         logger.VerifyLog().AtLevel(LogLevel.Information).ContainingMessage("beendet").WasCalled(Times.Once);
         logger.VerifyNoLog(LogLevel.Error);
     }

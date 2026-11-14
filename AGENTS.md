@@ -34,6 +34,7 @@ Versionen: v1 = Commit `44fecc3`, v2 = `e008ecf` (RAM-Prüfung). Aktuelle `<Vers
 | F9 | Mail bei jedem `Error`/`Critical` an eine konfigurierbare Empfängerliste | `MailAlertLoggerProvider` → `AlertQueue` → `MailAlertDispatcher` (30 s Bündelung, Retry) → `MailKitMailSender`. SMTP `in-v3.mailjet.com:587` STARTTLS. Empfänger ohne `@` erhalten `@atbas.de` |
 | F10 | Disk belegt > 90 % → `Error`, > 95 % → `Critical` (jeweils mit Mail) | `DiskUsageAlertEvaluator` + `UsageAlertTracker`: Eskalation sofort, Wiederholung nach 6 h, Entwarnung als `Information` |
 | F11 | Jede Mail enthält den aktuellen freien Speicherplatz | `AlertMailComposer`: Zeile im Mailtext + `\| 42.5 GB frei` im Betreff |
+| F15 | Laufende Container älter als 1 h (konfigurierbar) automatisch entfernen; der Build-Agent soll keine lang laufenden Container haben (liegengebliebene Testcontainers) | `ContainerCleanupWorker` (10 min, erstmals nach `Podman:StartupDelay`) → `ContainerCleanup` → `PodmanContainerCli` (`podman ps --format json`, Alter aus `StartedAt`; `podman rm --force --volumes --time`). Pod-Infra-Container und `ExcludedNamePrefixes` bleiben. Übersprungen, solange der `MaintenanceExecutor` beschäftigt ist. Entfernen = `Warning`, kein Mail |
 | F12 (v2) | RAM belegt > 90 % → `Error`, > 95 % → `Critical`, analog zur Disk | `MemoryMonitorWorker` (1 min) → `MemoryUsageAlertEvaluator` über `WindowsMemoryProbe` (`GlobalMemoryStatusEx`) |
 | F13 (v2) | Jede Mail enthält die RAM-Auslastung in Prozent | `AlertMailComposer`: Zeile `RAM-Auslastung:` + `\| RAM 63.5 %` im Betreff. Schlägt eine Messung fehl, geht die Mail trotzdem raus („unbekannt (…)“) |
 
@@ -102,7 +103,7 @@ registriert, damit Tests eigene Instanzen vorgeben können.
 
 ### Komponenten (Ordner unter `src/Msem001.Watchdog`)
 
-* `Configuration/`: `WatchdogOptions` mit den Unterabschnitten Disk, Memory, Schedule, Podman, Scripts,
+* `Configuration/`: `WatchdogOptions` mit den Unterabschnitten Disk, Memory, Schedule, Podman, Containers, Scripts,
   JenkinsAgent und Mail, dazu `WatchdogOptionsValidator` (läuft beim Start, `ValidateOnStart`).
 * `Monitoring/`: `UsageLevel`, `UsageAlertTracker` und `UsageAlertDecision`. Die gemeinsame
   Schwellwert-, Wiederholungs- und Entwarnungslogik für Disk **und** RAM. Neue Auslastungsprüfungen
@@ -122,7 +123,7 @@ registriert, damit Tests eigene Instanzen vorgeben können.
 * `Hosting/`: `ServiceCollectionExtensions.AddWatchdog`, `StartupDiagnostics`.
 
 Reihenfolge der Hosted Services (in `HostingTests` geprüft): StartupDiagnostics, MailAlertDispatcher,
-BuildAgentHealthWorker, DiskMonitorWorker, MemoryMonitorWorker, NightlyPreCheckWorker.
+BuildAgentHealthWorker, DiskMonitorWorker, MemoryMonitorWorker, NightlyPreCheckWorker, ContainerCleanupWorker.
 
 ### Logging-Konventionen
 
@@ -130,18 +131,19 @@ BuildAgentHealthWorker, DiskMonitorWorker, MemoryMonitorWorker, NightlyPreCheckW
   Instanzmethoden, wegen SA1204). CA1873 verlangt billige Argumente: Objekte oder lokale Variablen
   übergeben, nichts im Aufruf berechnen.
 * `Error`/`Critical` erzeugen **Mails**. Diese Level nur für Zustände verwenden, die ein Mensch sehen muss.
-* EventId-Bereiche je Klasse (eindeutig halten; neue Klassen bekommen den nächsten freien Bereich, z.B. 14000):
+* EventId-Bereiche je Klasse (eindeutig halten; neue Klassen bekommen den nächsten freien Bereich, z.B. 16000):
 
   | Bereich | Klasse | Bereich | Klasse |
   |---|---|---|---|
-  | 100–108 | StartupDiagnostics | 7000 | DiskMaintenanceWorkflow |
+  | 100–109 | StartupDiagnostics | 7000 | DiskMaintenanceWorkflow |
   | 1100 | DiskUsageAlertEvaluator | 8000 | BuildAgentHealthMonitor |
   | 1200 | MemoryUsageAlertEvaluator | 9000 | MailAlertDispatcher |
   | 2000 | ProcessRunner | 10000 | DiskMonitorWorker |
   | 3000 | PowerShellMaintenanceScripts | 11000 | NightlyPreCheckWorker |
-  | 4000 / 4100 / 4200 | PodmanCli / PodmanHealthChecker / PodmanRecovery | 12000 | BuildAgentHealthWorker |
+  | 4000 / 4100 / 4200 / 4300 | PodmanCli / PodmanHealthChecker / PodmanRecovery / PodmanContainerCli | 12000 | BuildAgentHealthWorker |
   | 5000 / 5100 | JenkinsAgentController / JenkinsAgentDrain | 13000 | MemoryMonitorWorker |
-  | 6000 | MaintenanceExecutor | | |
+  | 6000 | MaintenanceExecutor | 14000 | ContainerCleanup |
+  | | | 15000 | ContainerCleanupWorker |
 
 ## 6. Bekannte Fallstricke
 
