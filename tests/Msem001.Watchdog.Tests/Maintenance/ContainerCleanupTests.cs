@@ -29,7 +29,7 @@ public sealed class ContainerCleanupTests : IDisposable
     [Test]
     public async Task RunAsync_RemovesOnlyContainersRunningLongerThanMaxRunTime()
     {
-        Running(Started("frisch", TimeSpan.FromMinutes(5)), Started("grenzwertig", TimeSpan.FromHours(1)), Started("liegengeblieben", TimeSpan.FromHours(3)));
+        Containers(Running("frisch", TimeSpan.FromMinutes(5)), Running("grenzwertig", TimeSpan.FromHours(1)), Running("liegengeblieben", TimeSpan.FromHours(3)));
 
         await Assert.That(await CreateSut().RunAsync(TestData.Ct)).IsEqualTo(1);
 
@@ -40,15 +40,59 @@ public sealed class ContainerCleanupTests : IDisposable
     [Test]
     public async Task RunAsync_UsesConfiguredMaxRunTime()
     {
-        Running(Started("kurz", TimeSpan.FromMinutes(20)));
+        Containers(Running("kurz", TimeSpan.FromMinutes(20)));
 
         await Assert.That(await CreateSut(o => o.Containers.MaxRunTime = TimeSpan.FromMinutes(15)).RunAsync(TestData.Ct)).IsEqualTo(1);
     }
 
     [Test]
+    public async Task RunAsync_RemovesLeftOverCreatedAndExitedContainers()
+    {
+        Containers(
+            Stopped("nie-gestartet", "created", createdAgo: TimeSpan.FromHours(2), exitedAgo: null),
+            Stopped("beendet", "exited", createdAgo: TimeSpan.FromHours(5), exitedAgo: TimeSpan.FromHours(2)),
+            Stopped("gerade-beendet", "exited", createdAgo: TimeSpan.FromHours(5), exitedAgo: TimeSpan.FromMinutes(10)),
+            Stopped("gerade-angelegt", "created", createdAgo: TimeSpan.FromMinutes(1), exitedAgo: null));
+
+        await Assert.That(await CreateSut().RunAsync(TestData.Ct)).IsEqualTo(2);
+
+        await Assert.That(removed).IsEquivalentTo(["nie-gestartet", "beendet"]);
+        logger.VerifyLog().AtLevel(LogLevel.Warning).ContainingMessage("Liegengebliebener Container beendet (image, Zustand exited seit 02:00:00, erlaubt 01:00:00) wurde entfernt").WasCalled(Times.Once);
+    }
+
+    [Test]
+    public async Task RunAsync_UsesConfiguredMaxStoppedTime()
+    {
+        Containers(Stopped("beendet", "exited", TimeSpan.FromHours(1), TimeSpan.FromMinutes(20)), Running("läuft", TimeSpan.FromMinutes(20)));
+
+        await CreateSut(o => o.Containers.MaxStoppedTime = TimeSpan.FromMinutes(15)).RunAsync(TestData.Ct);
+
+        await Assert.That(removed).IsEquivalentTo(["beendet"]);
+    }
+
+    [Test]
+    public async Task RunAsync_RemoveStoppedDisabled_KeepsNotRunningContainers()
+    {
+        Containers(Stopped("beendet", "exited", TimeSpan.FromDays(1), TimeSpan.FromDays(1)), Running("alt", TimeSpan.FromDays(1)));
+
+        await CreateSut(o => o.Containers.RemoveStopped = false).RunAsync(TestData.Ct);
+
+        await Assert.That(removed).IsEquivalentTo(["alt"]);
+    }
+
+    [Test]
+    public async Task RunAsync_ContainerBeingRemoved_IsLeftAlone()
+    {
+        Containers(Stopped("verschwindet", "removing", TimeSpan.FromDays(1), null));
+
+        await Assert.That(await CreateSut().RunAsync(TestData.Ct)).IsEqualTo(0);
+        containers.RemoveAsync(Arg.Any<PodmanContainer>(), Arg.Any<CancellationToken>()).WasNeverCalled();
+    }
+
+    [Test]
     public async Task RunAsync_ExcludedNamePrefix_IsKept()
     {
-        Running(Started("Keep-Registry", TimeSpan.FromDays(2)), Started("alt", TimeSpan.FromDays(2)));
+        Containers(Running("Keep-Registry", TimeSpan.FromDays(2)), Stopped("keep-cache", "exited", TimeSpan.FromDays(2), TimeSpan.FromDays(2)), Running("alt", TimeSpan.FromDays(2)));
 
         await CreateSut(o => o.Containers.ExcludedNamePrefixes = [" ", "keep-"]).RunAsync(TestData.Ct);
 
@@ -58,17 +102,17 @@ public sealed class ContainerCleanupTests : IDisposable
     [Test]
     public async Task RunAsync_RemovalFails_IsNotCounted()
     {
-        Running(Started("hartnäckig", TimeSpan.FromHours(2)));
+        Containers(Running("hartnäckig", TimeSpan.FromHours(2)));
         containers.RemoveAsync(Arg.Any<PodmanContainer>(), Arg.Any<CancellationToken>()).Returns(false);
 
         await Assert.That(await CreateSut().RunAsync(TestData.Ct)).IsEqualTo(0);
-        logger.VerifyLog().ContainingMessage("wurde entfernt").WasNeverCalled();
+        logger.VerifyLog().ContainingMessage("entfernt").AtLevel(LogLevel.Warning).WasNeverCalled();
     }
 
     [Test]
     public async Task RunAsync_ListFails_RemovesNothing()
     {
-        containers.ListRunningAsync(Arg.Any<CancellationToken>()).Returns((IReadOnlyList<PodmanContainer>?)null);
+        containers.ListAsync(Arg.Any<CancellationToken>()).Returns((IReadOnlyList<PodmanContainer>?)null);
 
         await Assert.That(await CreateSut().RunAsync(TestData.Ct)).IsEqualTo(0);
         containers.RemoveAsync(Arg.Any<PodmanContainer>(), Arg.Any<CancellationToken>()).WasNeverCalled();
@@ -77,22 +121,26 @@ public sealed class ContainerCleanupTests : IDisposable
     [Test]
     public async Task RunAsync_WhileMaintenanceRuns_IsSkipped()
     {
-        Running(Started("alt", TimeSpan.FromHours(2)));
+        Containers(Running("alt", TimeSpan.FromHours(2)));
         var release = new TaskCompletionSource<int>(TaskCreationOptions.RunContinuationsAsynchronously);
         var maintenance = executor.RunWithAgentStoppedAsync("Podman-Reparatur", _ => release.Task, TestData.Ct);
         await Wait.UntilAsync(() => executor.IsBusy);
 
         await Assert.That(await CreateSut().RunAsync(TestData.Ct)).IsEqualTo(0);
 
-        containers.ListRunningAsync(Arg.Any<CancellationToken>()).WasNeverCalled();
+        containers.ListAsync(Arg.Any<CancellationToken>()).WasNeverCalled();
         release.SetResult(0);
         await maintenance;
     }
 
-    private static PodmanContainer Started(string name, TimeSpan ago) => new(name + "-id", name, "image", Now - ago);
+    private static PodmanContainer Running(string name, TimeSpan startedAgo) =>
+        new(name + "-id", name, "image", "running", Now - startedAgo - TimeSpan.FromSeconds(5), Now - startedAgo, null);
 
-    private void Running(params PodmanContainer[] running) =>
-        containers.ListRunningAsync(Arg.Any<CancellationToken>()).Returns((IReadOnlyList<PodmanContainer>?)running);
+    private static PodmanContainer Stopped(string name, string state, TimeSpan createdAgo, TimeSpan? exitedAgo) =>
+        new(name + "-id", name, "image", state, Now - createdAgo, exitedAgo is null ? null : Now - createdAgo, Now - exitedAgo);
+
+    private void Containers(params PodmanContainer[] all) =>
+        containers.ListAsync(Arg.Any<CancellationToken>()).Returns((IReadOnlyList<PodmanContainer>?)all);
 
     private ContainerCleanup CreateSut(Action<WatchdogOptions>? configure = null) =>
         new(containers.Object, executor, TestData.CreateOptions(configure), time, logger);

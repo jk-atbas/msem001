@@ -67,6 +67,9 @@ internal static class ServiceCollectionExtensions
         // Hosted services (StartupDiagnostics first, MailAlertDispatcher before the workers so it is stopped last)
         services.AddHostedService<StartupDiagnostics>();
         services.AddHostedService<MailAlertDispatcher>();
+
+        // Stopped after all workers (reverse order), so no worker or maintenance restarts the agent afterwards
+        services.AddHostedService<JenkinsAgentShutdown>();
         services.AddHostedService<BuildAgentHealthWorker>();
         services.AddHostedService<DiskMonitorWorker>();
         services.AddHostedService<MemoryMonitorWorker>();

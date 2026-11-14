@@ -146,6 +146,33 @@ public sealed class MaintenanceExecutorTests : IDisposable
     }
 
     [Test]
+    public async Task RunWithAgentStoppedAsync_ServiceShutsDown_AgentIsNotRestartedButNodeIsRestored()
+    {
+        await executor.RunWithAgentStoppedAsync(
+            "Test",
+            _ =>
+            {
+                executor.SuppressAgentRestart();
+                return Task.FromResult(0);
+            },
+            TestData.Ct);
+
+        await Assert.That(string.Join(" > ", calls)).IsEqualTo("drain > stop > restore(True)");
+        logger.VerifyLog().AtLevel(LogLevel.Information).ContainingMessage("nicht wieder gestartet").WasCalled(Times.Once);
+    }
+
+    [Test]
+    public async Task TryEnsureAgentRunningAsync_ServiceShutsDown_DoesNotStartAgent()
+    {
+        agent.IsRunning().Returns(false);
+        executor.SuppressAgentRestart();
+
+        await Assert.That(await executor.TryEnsureAgentRunningAsync(TestData.Ct)).IsFalse();
+
+        agent.StartAsync(Arg.Any<CancellationToken>()).WasNeverCalled();
+    }
+
+    [Test]
     public async Task TryEnsureAgentRunningAsync_AgentNotRunning_StartsIt()
     {
         agent.IsRunning().Returns(false);

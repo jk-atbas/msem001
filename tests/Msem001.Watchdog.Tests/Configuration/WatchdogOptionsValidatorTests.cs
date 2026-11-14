@@ -33,6 +33,7 @@ public sealed class WatchdogOptionsValidatorTests
         yield return () => ("ProbeTimeout", o => o.Podman.ProbeTimeout = TimeSpan.Zero);
         yield return () => ("Containers:CheckInterval", o => o.Containers.CheckInterval = TimeSpan.Zero);
         yield return () => ("Containers:MaxRunTime", o => o.Containers.MaxRunTime = TimeSpan.Zero);
+        yield return () => ("Containers:MaxStoppedTime", o => o.Containers.MaxStoppedTime = TimeSpan.Zero);
         yield return () => ("Containers:StopTimeout", o => o.Containers.StopTimeout = TimeSpan.FromSeconds(-1));
         yield return () => ("PowerShellExecutable", o => o.Scripts.PowerShellExecutable = string.Empty);
         yield return () => ("PodmanResetTimeout", o => o.Scripts.PodmanResetTimeout = TimeSpan.Zero);
@@ -72,6 +73,18 @@ public sealed class WatchdogOptionsValidatorTests
 
         await Assert.That(result.Failed).IsTrue();
         await Assert.That(result.FailureMessage).Contains("Secret").And.Contains("Recipients");
+    }
+
+    [Test]
+    public async Task Validate_RemoveStoppedDisabled_IgnoresMaxStoppedTime()
+    {
+        var options = TestData.CreateOptionsValue(o =>
+        {
+            o.Containers.RemoveStopped = false;
+            o.Containers.MaxStoppedTime = TimeSpan.Zero;
+        });
+
+        await Assert.That(validator.Validate(null, options).Succeeded).IsTrue();
     }
 
     [Test]

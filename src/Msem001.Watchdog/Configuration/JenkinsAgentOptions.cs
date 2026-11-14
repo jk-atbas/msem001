@@ -32,6 +32,12 @@ public sealed class JenkinsAgentOptions
     /// <summary>Timeout for terminating the agent process tree.</summary>
     public TimeSpan StopTimeout { get; set; } = TimeSpan.FromSeconds(30);
 
+    /// <summary>
+    /// Whether the agent is terminated when the watchdog service stops. Running builds are aborted,
+    /// because the service stop allows no waiting for them.
+    /// </summary>
+    public bool StopWithService { get; set; } = true;
+
     /// <summary>Time after the start in which an immediate exit of the agent is detected.</summary>
     public TimeSpan StartupGracePeriod { get; set; } = TimeSpan.FromSeconds(15);
 

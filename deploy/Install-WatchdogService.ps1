@@ -5,7 +5,9 @@
 
 .DESCRIPTION
     Ablauf:
-      1. Laufenden Dienst stoppen (ein laufender Jenkins-Agent bleibt dabei verbunden)
+      1. Laufenden Dienst stoppen. Der Dienst beendet dabei den Jenkins-Agent, laufende Builds werden abgebrochen
+         (ausser Watchdog:JenkinsAgent:StopWithService = false). Updates daher ohne laufende Builds einspielen
+         oder den Node vorher in Jenkins offline schalten. Nach Schritt 6 verbindet der Dienst den Agent neu.
       2. Dateien nach -InstallPath spiegeln (appsettings.Local.json und Logs bleiben erhalten)
       3. Dem Dienstkonto das Recht "Als Dienst anmelden" (SeServiceLogonRight) gewaehren
       4. Dienst anlegen bzw. Konto/Pfad aktualisieren
@@ -108,7 +110,7 @@ if (-not $PSCmdlet.ShouldProcess($ServiceName, "Installieren nach $InstallPath a
 
 $service = Get-Service -Name $ServiceName -ErrorAction SilentlyContinue
 if ($service -and $service.Status -ne 'Stopped') {
-    Write-Host "-> Stoppe $ServiceName ..." -ForegroundColor Cyan
+    Write-Host "-> Stoppe $ServiceName (beendet auch den Jenkins-Agent, laufende Builds brechen ab) ..." -ForegroundColor Cyan
     Stop-Service -Name $ServiceName -Force
     $service.WaitForStatus('Stopped', [TimeSpan]::FromSeconds(60))
 }

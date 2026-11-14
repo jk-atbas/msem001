@@ -5,8 +5,9 @@ using Msem001.Watchdog.Podman;
 namespace Msem001.Watchdog.Maintenance;
 
 /// <summary>
-/// Removes running containers older than <see cref="ContainerCleanupOptions.MaxRunTime"/>.
-/// Builds start containers only for their own duration (e.g. Testcontainers), long running ones are leftovers.
+/// Removes containers left over by builds: running ones older than <see cref="ContainerCleanupOptions.MaxRunTime"/>
+/// and not running ones (created, exited …) older than <see cref="ContainerCleanupOptions.MaxStoppedTime"/>.
+/// Builds use containers only for their own duration (e.g. Testcontainers), everything older is a leftover.
 /// </summary>
 internal sealed partial class ContainerCleanup(
     IPodmanContainers containers,
@@ -15,7 +16,7 @@ internal sealed partial class ContainerCleanup(
     TimeProvider timeProvider,
     ILogger<ContainerCleanup> logger)
 {
-    /// <summary>Checks the running containers once and removes the long running ones.</summary>
+    /// <summary>Checks the containers once and removes the left over ones.</summary>
     /// <returns>Number of removed containers.</returns>
     public async Task<int> RunAsync(CancellationToken cancellationToken)
     {
@@ -26,33 +27,40 @@ internal sealed partial class ContainerCleanup(
             return 0;
         }
 
-        var running = await containers.ListRunningAsync(cancellationToken).ConfigureAwait(false);
-        if (running is null)
+        var all = await containers.ListAsync(cancellationToken).ConfigureAwait(false);
+        if (all is null)
             return 0;
 
         var settings = options.Value.Containers;
         var now = timeProvider.GetUtcNow();
         var removed = 0;
-        foreach (var container in running)
+        foreach (var container in all)
         {
-            var runTime = TruncateToSeconds(now - container.StartedAt);
-            if (runTime <= settings.MaxRunTime)
+            if (container.IsRemoving || (!container.IsRunning && !settings.RemoveStopped))
+                continue;
+
+            var age = TruncateToSeconds(now - container.StateSince);
+            var maxAge = container.IsRunning ? settings.MaxRunTime : settings.MaxStoppedTime;
+            if (age <= maxAge)
                 continue;
 
             if (IsExcluded(container, settings.ExcludedNamePrefixes))
             {
-                LogExcluded(logger, container.Name, runTime);
+                LogExcluded(logger, container.Name, container.State, age);
                 continue;
             }
 
-            if (await containers.RemoveAsync(container, cancellationToken).ConfigureAwait(false))
-            {
-                removed++;
-                LogRemoved(logger, container.Name, container.Image, runTime, settings.MaxRunTime);
-            }
+            if (!await containers.RemoveAsync(container, cancellationToken).ConfigureAwait(false))
+                continue;
+
+            removed++;
+            if (container.IsRunning)
+                LogRemovedRunning(logger, container.Name, container.Image, age, maxAge);
+            else
+                LogRemovedStopped(logger, container.Name, container.Image, container.State, age, maxAge);
         }
 
-        LogChecked(logger, running.Count, removed);
+        LogChecked(logger, all.Count, removed);
         return removed;
     }
 
@@ -64,12 +72,15 @@ internal sealed partial class ContainerCleanup(
     [LoggerMessage(EventId = 14000, Level = LogLevel.Debug, Message = "Container-Prüfung übersprungen, eine Wartung läuft")]
     private static partial void LogSkippedBusy(ILogger logger);
 
-    [LoggerMessage(EventId = 14001, Level = LogLevel.Warning, Message = "Container {ContainerName} ({Image}) lief seit {RunTime} (erlaubt {MaxRunTime}) und wurde entfernt")]
-    private static partial void LogRemoved(ILogger logger, string containerName, string image, TimeSpan runTime, TimeSpan maxRunTime);
+    [LoggerMessage(EventId = 14001, Level = LogLevel.Warning, Message = "Container {ContainerName} ({Image}) lief seit {Age} (erlaubt {MaxAge}) und wurde entfernt")]
+    private static partial void LogRemovedRunning(ILogger logger, string containerName, string image, TimeSpan age, TimeSpan maxAge);
 
-    [LoggerMessage(EventId = 14002, Level = LogLevel.Debug, Message = "Container {ContainerName} läuft seit {RunTime}, ist aber ausgenommen")]
-    private static partial void LogExcluded(ILogger logger, string containerName, TimeSpan runTime);
+    [LoggerMessage(EventId = 14004, Level = LogLevel.Warning, Message = "Liegengebliebener Container {ContainerName} ({Image}, Zustand {State} seit {Age}, erlaubt {MaxAge}) wurde entfernt")]
+    private static partial void LogRemovedStopped(ILogger logger, string containerName, string image, string state, TimeSpan age, TimeSpan maxAge);
 
-    [LoggerMessage(EventId = 14003, Level = LogLevel.Debug, Message = "Container-Prüfung: {Running} laufende Container, {Removed} entfernt")]
-    private static partial void LogChecked(ILogger logger, int running, int removed);
+    [LoggerMessage(EventId = 14002, Level = LogLevel.Debug, Message = "Container {ContainerName} ({State} seit {Age}) ist ausgenommen")]
+    private static partial void LogExcluded(ILogger logger, string containerName, string state, TimeSpan age);
+
+    [LoggerMessage(EventId = 14003, Level = LogLevel.Debug, Message = "Container-Prüfung: {Count} Container, {Removed} entfernt")]
+    private static partial void LogChecked(ILogger logger, int count, int removed);
 }

@@ -34,7 +34,8 @@ Versionen: v1 = Commit `44fecc3`, v2 = `e008ecf` (RAM-Prüfung). Aktuelle `<Vers
 | F9 | Mail bei jedem `Error`/`Critical` an eine konfigurierbare Empfängerliste | `MailAlertLoggerProvider` → `AlertQueue` → `MailAlertDispatcher` (30 s Bündelung, Retry) → `MailKitMailSender`. SMTP `in-v3.mailjet.com:587` STARTTLS. Empfänger ohne `@` erhalten `@atbas.de` |
 | F10 | Disk belegt > 90 % → `Error`, > 95 % → `Critical` (jeweils mit Mail) | `DiskUsageAlertEvaluator` + `UsageAlertTracker`: Eskalation sofort, Wiederholung nach 6 h, Entwarnung als `Information` |
 | F11 | Jede Mail enthält den aktuellen freien Speicherplatz | `AlertMailComposer`: Zeile im Mailtext + `\| 42.5 GB frei` im Betreff |
-| F15 | Laufende Container älter als 1 h (konfigurierbar) automatisch entfernen; der Build-Agent soll keine lang laufenden Container haben (liegengebliebene Testcontainers) | `ContainerCleanupWorker` (10 min, erstmals nach `Podman:StartupDelay`) → `ContainerCleanup` → `PodmanContainerCli` (`podman ps --format json`, Alter aus `StartedAt`; `podman rm --force --volumes --time`). Pod-Infra-Container und `ExcludedNamePrefixes` bleiben. Übersprungen, solange der `MaintenanceExecutor` beschäftigt ist. Entfernen = `Warning`, kein Mail |
+| F15 | Liegengebliebene Container automatisch entfernen: laufende älter als 1 h, nicht laufende (`created`/`exited` …) seit 1 h (beides konfigurierbar). Der Build-Agent soll keine lang laufenden Container haben (Testcontainers) | `ContainerCleanupWorker` (10 min, erstmals nach `Podman:StartupDelay`) → `ContainerCleanup` → `PodmanContainerCli` (`podman ps --all --format json`; Alter laufend ab `StartedAt`, sonst ab `ExitedAt` bzw. `Created`; nicht gesetzte Zeiten = Go-Nullzeit `-62135596800`; `podman rm --force --volumes --time`). Pod-Infra-Container, Zustand `removing` und `ExcludedNamePrefixes` bleiben. Übersprungen, solange der `MaintenanceExecutor` beschäftigt ist. Entfernen = `Warning`, kein Mail |
+| F16 | Beim Stoppen des Dienstes den Jenkins-Agent mit beenden (abschaltbar über `JenkinsAgent:StopWithService`) | `JenkinsAgentShutdown` (`IHostedLifecycleService`, direkt nach `MailAlertDispatcher` registriert): `StoppingAsync` ruft `MaintenanceExecutor.SuppressAgentRestart()` (keine Neustarts mehr durch Wartung oder Überwachung), `StopAsync` läuft nach allen Workern und beendet den Agent (nicht abbrechbar, begrenzt durch `StopTimeout`). Fehler = `Error`, Mail geht noch raus, weil der Dispatcher danach stoppt |
 | F12 (v2) | RAM belegt > 90 % → `Error`, > 95 % → `Critical`, analog zur Disk | `MemoryMonitorWorker` (1 min) → `MemoryUsageAlertEvaluator` über `WindowsMemoryProbe` (`GlobalMemoryStatusEx`) |
 | F13 (v2) | Jede Mail enthält die RAM-Auslastung in Prozent | `AlertMailComposer`: Zeile `RAM-Auslastung:` + `\| RAM 63.5 %` im Betreff. Schlägt eine Messung fehl, geht die Mail trotzdem raus („unbekannt (…)“) |
 
@@ -123,7 +124,7 @@ registriert, damit Tests eigene Instanzen vorgeben können.
 * `Hosting/`: `ServiceCollectionExtensions.AddWatchdog`, `StartupDiagnostics`.
 
 Reihenfolge der Hosted Services (in `HostingTests` geprüft): StartupDiagnostics, MailAlertDispatcher,
-BuildAgentHealthWorker, DiskMonitorWorker, MemoryMonitorWorker, NightlyPreCheckWorker, ContainerCleanupWorker.
+JenkinsAgentShutdown, BuildAgentHealthWorker, DiskMonitorWorker, MemoryMonitorWorker, NightlyPreCheckWorker, ContainerCleanupWorker.
 
 ### Logging-Konventionen
 
@@ -141,7 +142,7 @@ BuildAgentHealthWorker, DiskMonitorWorker, MemoryMonitorWorker, NightlyPreCheckW
   | 2000 | ProcessRunner | 10000 | DiskMonitorWorker |
   | 3000 | PowerShellMaintenanceScripts | 11000 | NightlyPreCheckWorker |
   | 4000 / 4100 / 4200 / 4300 | PodmanCli / PodmanHealthChecker / PodmanRecovery / PodmanContainerCli | 12000 | BuildAgentHealthWorker |
-  | 5000 / 5100 | JenkinsAgentController / JenkinsAgentDrain | 13000 | MemoryMonitorWorker |
+  | 5000 / 5100 / 5200 | JenkinsAgentController / JenkinsAgentDrain / JenkinsAgentShutdown | 13000 | MemoryMonitorWorker |
   | 6000 | MaintenanceExecutor | 14000 | ContainerCleanup |
   | | | 15000 | ContainerCleanupWorker |
 
@@ -165,6 +166,9 @@ BuildAgentHealthWorker, DiskMonitorWorker, MemoryMonitorWorker, NightlyPreCheckW
   `HttpClient` entfernt beim Folgen den `Authorization`-Header, der anonyme Folge-Request endet mit 403,
   obwohl der Toggle gegriffen hat (auf MSEM001 am 13.11.2026 beobachtet). Deshalb `AllowAutoRedirect = false`
   in `JenkinsApiClient.CreateHandler` und 3xx als Erfolg werten.
+* **Stopp-Reihenfolge.** Der Host stoppt Hosted Services in umgekehrter Registrierungsreihenfolge. `JenkinsAgentShutdown`
+  muss vor den Workern registriert bleiben (stoppt nach ihnen), sonst startet die Agent-Überwachung den Agent wieder.
+  `MailAlertDispatcher` muss davor stehen, damit Fehler beim Beenden noch per Mail gemeldet werden.
 * `Environment.NewLine` ist bereits vom EnvironmentAbstractions-Analyzer gebannt; ein zweiter Eintrag in
   `BannedSymbols.txt` führt zu RS0031.
 * Mit .NET 10+ wird VSTest nicht mehr unterstützt. `global.json` setzt den Runner auf

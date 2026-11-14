@@ -10,9 +10,16 @@ namespace Msem001.Watchdog.Maintenance;
 internal sealed partial class MaintenanceExecutor(IJenkinsAgent agent, IJenkinsAgentDrain drain, ILogger<MaintenanceExecutor> logger) : IDisposable
 {
     private readonly SemaphoreSlim gate = new(1, 1);
+    private volatile bool restartSuppressed;
 
     /// <summary>Whether a maintenance routine is currently running.</summary>
     public bool IsBusy => gate.CurrentCount == 0;
+
+    /// <summary>
+    /// Called when the service shuts down and stops the agent itself: from now on the agent is no longer
+    /// (re)started, neither after a cancelled maintenance nor by <see cref="TryEnsureAgentRunningAsync"/>.
+    /// </summary>
+    public void SuppressAgentRestart() => restartSuppressed = true;
 
     /// <summary>
     /// Waits for running builds, stops the agent, runs the routine and always reconnects the agent afterwards.
@@ -55,8 +62,12 @@ internal sealed partial class MaintenanceExecutor(IJenkinsAgent agent, IJenkinsA
                 }
                 finally
                 {
-                    // Reconnect even if the routine failed or the service is shutting down.
-                    await StartAgentAsync().ConfigureAwait(false);
+                    // Reconnect even if the routine failed, unless the service shuts down and stops the agent anyway.
+                    if (restartSuppressed)
+                        LogRestartSuppressed(logger, routineName);
+                    else
+                        await StartAgentAsync().ConfigureAwait(false);
+
                     LogRoutineFinished(logger, routineName, stopwatch.Elapsed);
                 }
             }
@@ -74,9 +85,12 @@ internal sealed partial class MaintenanceExecutor(IJenkinsAgent agent, IJenkinsA
     /// <summary>
     /// Starts the agent if it is not running. Does nothing while a maintenance routine runs.
     /// </summary>
-    /// <returns><see langword="false"/> if skipped because of a running maintenance routine.</returns>
+    /// <returns><see langword="false"/> if skipped because of a running maintenance routine or the service shutting down.</returns>
     public async Task<bool> TryEnsureAgentRunningAsync(CancellationToken cancellationToken)
     {
+        if (restartSuppressed)
+            return false;
+
         if (!await gate.WaitAsync(TimeSpan.Zero, cancellationToken).ConfigureAwait(false))
             return false;
 
@@ -113,6 +127,9 @@ internal sealed partial class MaintenanceExecutor(IJenkinsAgent agent, IJenkinsA
 
     [LoggerMessage(EventId = 6004, Level = LogLevel.Warning, Message = "Jenkins-Agent läuft nicht und wird gestartet")]
     private static partial void LogAgentNotRunning(ILogger logger);
+
+    [LoggerMessage(EventId = 6005, Level = LogLevel.Information, Message = "Dienst wird beendet: Jenkins-Agent wird nach der Wartungsroutine '{RoutineName}' nicht wieder gestartet")]
+    private static partial void LogRestartSuppressed(ILogger logger, string routineName);
 
     private async Task StopAgentAsync(CancellationToken cancellationToken)
     {

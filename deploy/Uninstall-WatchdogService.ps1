@@ -1,7 +1,9 @@
 #Requires -RunAsAdministrator
 <#
 .SYNOPSIS
-    Entfernt den MSEM001 Watchdog-Dienst. Ein laufender Jenkins-Agent bleibt verbunden.
+    Entfernt den MSEM001 Watchdog-Dienst. Beim Stoppen beendet der Dienst auch den Jenkins-Agent, laufende Builds
+    werden abgebrochen (ausser Watchdog:JenkinsAgent:StopWithService = false). Danach startet niemand den Agent
+    mehr automatisch.
 
 .EXAMPLE
     .\Uninstall-WatchdogService.ps1 -RemoveFiles
@@ -22,6 +24,7 @@ if (-not $service) {
 }
 elseif ($PSCmdlet.ShouldProcess($ServiceName, 'Dienst stoppen und entfernen')) {
     if ($service.Status -ne 'Stopped') {
+        Write-Host "-> Stoppe $ServiceName (beendet auch den Jenkins-Agent) ..." -ForegroundColor Cyan
         Stop-Service -Name $ServiceName -Force
         $service.WaitForStatus('Stopped', [TimeSpan]::FromSeconds(60))
     }

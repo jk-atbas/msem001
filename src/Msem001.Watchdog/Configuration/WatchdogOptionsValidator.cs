@@ -89,6 +89,8 @@ internal sealed class WatchdogOptionsValidator : IValidateOptions<WatchdogOption
 
         RequirePositive(containers.CheckInterval, "Watchdog:Containers:CheckInterval", errors);
         RequirePositive(containers.MaxRunTime, "Watchdog:Containers:MaxRunTime", errors);
+        if (containers.RemoveStopped)
+            RequirePositive(containers.MaxStoppedTime, "Watchdog:Containers:MaxStoppedTime", errors);
         RequireNotNegative(containers.StopTimeout, "Watchdog:Containers:StopTimeout", errors);
     }
 

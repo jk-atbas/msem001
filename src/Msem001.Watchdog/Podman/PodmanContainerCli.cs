@@ -14,10 +14,10 @@ internal sealed partial class PodmanContainerCli(
     IOptions<WatchdogOptions> options,
     ILogger<PodmanContainerCli> logger) : IPodmanContainers
 {
-    public async Task<IReadOnlyList<PodmanContainer>?> ListRunningAsync(CancellationToken cancellationToken)
+    public async Task<IReadOnlyList<PodmanContainer>?> ListAsync(CancellationToken cancellationToken)
     {
         var settings = options.Value.Podman;
-        var request = new ProcessRunRequest(settings.Executable, ["ps", "--format", "json"])
+        var request = new ProcessRunRequest(settings.Executable, ["ps", "--all", "--format", "json"])
         {
             DisplayName = "podman ps",
             Timeout = settings.CommandTimeout,
@@ -63,7 +63,7 @@ internal sealed partial class PodmanContainerCli(
         return false;
     }
 
-    /// <summary>Parses the JSON array of <c>podman ps --format json</c>; pod infra containers are skipped.</summary>
+    /// <summary>Parses the JSON array of <c>podman ps --all --format json</c>; pod infra containers are skipped.</summary>
     internal static IReadOnlyList<PodmanContainer> ParseContainers(string json)
     {
         if (string.IsNullOrWhiteSpace(json))
@@ -84,7 +84,9 @@ internal sealed partial class PodmanContainerCli(
                 ? names[0].GetString() ?? id
                 : id;
             var image = element.TryGetProperty("Image", out var imageValue) && imageValue.ValueKind == JsonValueKind.String ? imageValue.GetString()! : string.Empty;
-            containers.Add(new PodmanContainer(id, name, image, ReadStartedAt(element)));
+            var state = element.TryGetProperty("State", out var stateValue) && stateValue.ValueKind == JsonValueKind.String ? stateValue.GetString()! : string.Empty;
+            var created = ReadTime(element, "Created") ?? throw new JsonException($"Container {id} without creation time.");
+            containers.Add(new PodmanContainer(id, name, image, state, created, ReadTime(element, "StartedAt"), ReadTime(element, "ExitedAt")));
         }
 
         return containers;
@@ -93,20 +95,16 @@ internal sealed partial class PodmanContainerCli(
     internal static bool IsNoSuchContainerError(string standardError) =>
         standardError.Contains("no such container", StringComparison.OrdinalIgnoreCase);
 
-    // StartedAt is 0 or negative if unknown; Created is the fallback.
-    private static DateTimeOffset ReadStartedAt(JsonElement element)
-    {
-        var started = element.TryGetProperty("StartedAt", out var startedAt) && startedAt.ValueKind == JsonValueKind.Number ? startedAt.GetInt64() : 0;
-        if (started <= 0)
-            started = element.GetProperty("Created").GetInt64();
+    // Unix seconds; podman reports unset times as Go zero time (-62135596800).
+    private static DateTimeOffset? ReadTime(JsonElement element, string property) =>
+        element.TryGetProperty(property, out var value) && value.ValueKind == JsonValueKind.Number && value.GetInt64() is > 0 and var seconds
+            ? DateTimeOffset.FromUnixTimeSeconds(seconds)
+            : null;
 
-        return DateTimeOffset.FromUnixTimeSeconds(started);
-    }
-
-    [LoggerMessage(EventId = 4300, Level = LogLevel.Warning, Message = "podman ps fehlgeschlagen (Exit-Code {ExitCode}, Timeout {TimedOut}), laufende Container nicht geprüft: {StandardError}")]
+    [LoggerMessage(EventId = 4300, Level = LogLevel.Warning, Message = "podman ps fehlgeschlagen (Exit-Code {ExitCode}, Timeout {TimedOut}), Container nicht geprüft: {StandardError}")]
     private static partial void LogListFailed(ILogger logger, int exitCode, bool timedOut, string standardError);
 
-    [LoggerMessage(EventId = 4301, Level = LogLevel.Warning, Message = "Ausgabe von podman ps nicht lesbar, laufende Container nicht geprüft")]
+    [LoggerMessage(EventId = 4301, Level = LogLevel.Warning, Message = "Ausgabe von podman ps nicht lesbar, Container nicht geprüft")]
     private static partial void LogListUnreadable(ILogger logger, Exception exception);
 
     [LoggerMessage(EventId = 4302, Level = LogLevel.Warning, Message = "Container {ContainerName} konnte nicht entfernt werden (Exit-Code {ExitCode}, Timeout {TimedOut}): {StandardError}")]

@@ -1,3 +1,4 @@
+using System.Globalization;
 using Microsoft.Extensions.Options;
 using Msem001.Watchdog.Configuration;
 
@@ -33,6 +34,7 @@ internal sealed partial class StartupDiagnostics(
             settings.Podman.DockerApiPipeName,
             settings.JenkinsAgent.AgentName,
             settings.JenkinsAgent.Enabled,
+            settings.JenkinsAgent.StopWithService,
             settings.Mail.Enabled,
             recipients);
 
@@ -52,7 +54,8 @@ internal sealed partial class StartupDiagnostics(
 
         var containers = settings.Containers;
         var excluded = containers.ExcludedNamePrefixes.Count == 0 ? "keine" : string.Join(", ", containers.ExcludedNamePrefixes);
-        LogContainerConfiguration(logger, containers.Enabled, containers.MaxRunTime, containers.CheckInterval, excluded);
+        var stopped = containers.RemoveStopped ? containers.MaxStoppedTime.ToString("c", CultureInfo.InvariantCulture) : "nie";
+        LogContainerConfiguration(logger, containers.Enabled, containers.MaxRunTime, stopped, containers.CheckInterval, excluded);
 
         return Task.CompletedTask;
     }
@@ -75,7 +78,7 @@ internal sealed partial class StartupDiagnostics(
     [LoggerMessage(EventId = 105, Level = LogLevel.Error, Message = "Der Dienst läuft als {Account} ohne Administratorrechte. Der Jenkins-Agent erbt diese Rechte, Tests mit Admin-Voraussetzung schlagen fehl. Das Token konnte nicht untersucht werden")]
     private static partial void LogNotElevatedUnknownCause(ILogger logger, string account, Exception exception);
 
-    [LoggerMessage(EventId = 102, Level = LogLevel.Information, Message = "Konfiguration: Laufwerk {Drive}, Bereinigung < {CleanupThresholdGb} GB, Podman-Reset < {ResetThresholdGb} GB, Error > {ErrorPercent} %, Critical > {CriticalPercent} %, Nightly-Vorabprüfung {NightlyTime}, Podman-Machine {MachineName}, Pipe {PipeName}, Agent {AgentName} (verwaltet: {AgentEnabled}), Mail aktiv: {MailEnabled}, Empfänger: {Recipients}")]
+    [LoggerMessage(EventId = 102, Level = LogLevel.Information, Message = "Konfiguration: Laufwerk {Drive}, Bereinigung < {CleanupThresholdGb} GB, Podman-Reset < {ResetThresholdGb} GB, Error > {ErrorPercent} %, Critical > {CriticalPercent} %, Nightly-Vorabprüfung {NightlyTime}, Podman-Machine {MachineName}, Pipe {PipeName}, Agent {AgentName} (verwaltet: {AgentEnabled}, beim Dienststopp beenden: {StopWithService}), Mail aktiv: {MailEnabled}, Empfänger: {Recipients}")]
     private static partial void LogConfiguration(
         ILogger logger,
         string drive,
@@ -88,6 +91,7 @@ internal sealed partial class StartupDiagnostics(
         string pipeName,
         string agentName,
         bool agentEnabled,
+        bool stopWithService,
         bool mailEnabled,
         string recipients);
 
@@ -100,10 +104,10 @@ internal sealed partial class StartupDiagnostics(
     [LoggerMessage(EventId = 108, Level = LogLevel.Warning, Message = "Sanfte Wartung inaktiv (Watchdog:JenkinsAgent:ApiUser/ApiToken nicht gesetzt): eine Wartung bricht laufende Builds sofort ab")]
     private static partial void LogGracefulMaintenanceDisabled(ILogger logger);
 
-    [LoggerMessage(EventId = 109, Level = LogLevel.Information, Message = "Container-Bereinigung aktiv: {Enabled}, laufende Container älter als {MaxRunTime} werden entfernt (Prüfung alle {Interval}, ausgenommen: {ExcludedPrefixes})")]
-    private static partial void LogContainerConfiguration(ILogger logger, bool enabled, TimeSpan maxRunTime, TimeSpan interval, string excludedPrefixes);
+    [LoggerMessage(EventId = 109, Level = LogLevel.Information, Message = "Container-Bereinigung aktiv: {Enabled}, entfernt laufende Container nach {MaxRunTime}, nicht laufende (created/exited) nach {MaxStoppedTime} (Prüfung alle {Interval}, ausgenommen: {ExcludedPrefixes})")]
+    private static partial void LogContainerConfiguration(ILogger logger, bool enabled, TimeSpan maxRunTime, string maxStoppedTime, TimeSpan interval, string excludedPrefixes);
 
-    [LoggerMessage(EventId = 103, Level = LogLevel.Information, Message = "MSEM001 Watchdog wird beendet, ein laufender Jenkins-Agent bleibt verbunden")]
+    [LoggerMessage(EventId = 103, Level = LogLevel.Information, Message = "MSEM001 Watchdog beendet")]
     private static partial void LogStopping(ILogger logger);
 
     private void CheckAdministratorRights(string account, string version)

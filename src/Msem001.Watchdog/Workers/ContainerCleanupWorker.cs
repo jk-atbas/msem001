@@ -50,7 +50,7 @@ internal sealed partial class ContainerCleanupWorker(
         }
     }
 
-    [LoggerMessage(EventId = 15000, Level = LogLevel.Information, Message = "Container-Bereinigung (laufend länger als {MaxRunTime}) startet in {StartupDelay} (Intervall {Interval})")]
+    [LoggerMessage(EventId = 15000, Level = LogLevel.Information, Message = "Container-Bereinigung (laufend länger als {MaxRunTime} oder liegengeblieben) startet in {StartupDelay} (Intervall {Interval})")]
     private static partial void LogStarted(ILogger logger, TimeSpan maxRunTime, TimeSpan startupDelay, TimeSpan interval);
 
     [LoggerMessage(EventId = 15001, Level = LogLevel.Information, Message = "Container-Bereinigung ist deaktiviert")]

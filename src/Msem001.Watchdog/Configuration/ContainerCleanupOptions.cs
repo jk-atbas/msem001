@@ -14,6 +14,12 @@ public sealed class ContainerCleanupOptions
     /// <summary>Running containers started longer ago than this are removed.</summary>
     public TimeSpan MaxRunTime { get; set; } = TimeSpan.FromHours(1);
 
+    /// <summary>Whether left over containers that do not run (created, exited, stopped, dead …) are removed.</summary>
+    public bool RemoveStopped { get; set; } = true;
+
+    /// <summary>Not running containers are removed once they exited (or, if never started, were created) longer ago than this.</summary>
+    public TimeSpan MaxStoppedTime { get; set; } = TimeSpan.FromHours(1);
+
     /// <summary>Time a container gets to stop before it is killed (<c>podman rm --force --time</c>).</summary>
     public TimeSpan StopTimeout { get; set; } = TimeSpan.FromSeconds(10);
 

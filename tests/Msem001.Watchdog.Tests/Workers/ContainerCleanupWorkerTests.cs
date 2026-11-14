@@ -18,7 +18,7 @@ public sealed class ContainerCleanupWorkerTests : IDisposable
 
     public ContainerCleanupWorkerTests()
     {
-        containers.ListRunningAsync(Arg.Any<CancellationToken>())
+        containers.ListAsync(Arg.Any<CancellationToken>())
             .Returns((IReadOnlyList<PodmanContainer>?)Array.Empty<PodmanContainer>())
             .Callback(() => Interlocked.Increment(ref lists));
     }
@@ -34,7 +34,7 @@ public sealed class ContainerCleanupWorkerTests : IDisposable
         await Wait.UntilAsync(() => Volatile.Read(ref lists) >= 3, time, TimeSpan.FromMinutes(1));
         await worker.StopAsync(TestData.Ct);
 
-        logger.VerifyLog().AtLevel(LogLevel.Information).ContainingMessage("laufend länger als 01:00:00").WasCalled(Times.Once);
+        logger.VerifyLog().AtLevel(LogLevel.Information).ContainingMessage("laufend länger als 01:00:00 oder liegengeblieben").WasCalled(Times.Once);
     }
 
     [Test]
@@ -46,14 +46,14 @@ public sealed class ContainerCleanupWorkerTests : IDisposable
         time.Advance(TimeSpan.FromHours(1));
         await worker.StopAsync(TestData.Ct);
 
-        containers.ListRunningAsync(Arg.Any<CancellationToken>()).WasNeverCalled();
+        containers.ListAsync(Arg.Any<CancellationToken>()).WasNeverCalled();
         logger.VerifyLog().AtLevel(LogLevel.Information).ContainingMessage("deaktiviert").WasCalled(Times.Once);
     }
 
     [Test]
     public async Task RunCycleAsync_CleanupThrows_LogsError()
     {
-        containers.ListRunningAsync(Arg.Any<CancellationToken>()).Throws(new InvalidOperationException("kaputt"));
+        containers.ListAsync(Arg.Any<CancellationToken>()).Throws(new InvalidOperationException("kaputt"));
         using var worker = CreateSut();
 
         await worker.RunCycleAsync(TestData.Ct);
